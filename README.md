@@ -26,16 +26,30 @@ cp .env.example .env
 npm install && npm run dev    # http://localhost:5173 — enter APP_TOKEN on first visit
 ```
 
-## Endpoints (all require `Authorization: Bearer $APP_TOKEN`)
+## Dashboard
+
+Three tabs plus a global time selector (7D/14D/30D/90D):
+
+- **Health & Recovery**: Readiness score (multi-ring: HRV+RHR, sleep, stress, Body Battery vs 30-day baseline), longevity index, HRV/RHR matrix with a ±1 SD band, sleep architecture and 7-day debt, intraday stress vs Body Battery (ineffective recovery, post-meal and evening stress), AI Bio-Audit.
+- **Running Performance**: PMC (CTL/ATL/TSB with zones) + ACWR, Efficiency Factor and Pa:HR decoupling, 80/20 polarized check, race predictor (VDOT + Garmin), sortable run table with per-session critique, AI Running Coach.
+- **Strength & Hybrid**: cardio vs neuromuscular load and interference conflicts (leg day ↔ intervals/long run), balance radar, weekly tonnage, editable RPE/focus, quick manual log, AI Hybrid Strategist.
+
+AI everywhere: global Judge with 3 personas (Quant / Sergeant / Strategist), per-card micro-insights (one batched JSON call), "Ask Your Telemetry" chat. Providers: backend (Gemini on the server, recommended), Gemini/OpenAI key in the browser, or the **heuristic engine only**, which works offline and is always shown as the first draft.
+
+**Demo** mode with 4 scenarios (Balanced, Overtraining, Peak Form, Sleep Deprivation) and JSON import/export, all from ⚙️ Settings.
+
+All analytics run in the browser ([frontend/src/lib/analytics.js](frontend/src/lib/analytics.js)); the backend only fetches and caches the data.
+
+## Endpoints (all `/api/*` require `Authorization: Bearer $APP_TOKEN`)
 
 | Route | Content |
 |---|---|
-| `GET /api/main-dashboard` | sleep score/hours, resting HR, HRV (status, night, 7-day), stress, Body Battery, steps |
-| `GET /api/sport-dashboard` | last 10 activities (type, date, distance, duration, HR, kcal, training load / TE) |
-| `GET /api/ai-judge` | Gemini analysis of the data above |
+| `GET /api/telemetry?days=30` | daily vitals (HRV, RHR, sleep stages, stress, Body Battery, steps), today's intraday stress/BB, activities for `days+42` days (HR zones, cadence, TE, decoupling from splits, sets/tonnage/focus for strength), VO2max, Garmin race predictions |
+| `GET /api/status` | which features are configured (Garmin, Gemini model) |
+| `POST /api/ai` | `{system, prompt, json}` → Gemini text |
 | `GET /health` | no auth, for the host's health check |
 
-Garmin responses are cached for `CACHE_TTL_S` (default 5 min), and there's a single shared login, so Garmin's rate limit (429) isn't triggered.
+Caching: past days 24 h, recent days/activities 5 min, per-activity details 7 days. The first 30-day load makes ~65 Garmin calls (~180 for 90 days); after that, almost none. `?refresh=true` (the "Sync & Judge Now" button) re-reads only the last 2 days.
 
 ## Deploy
 

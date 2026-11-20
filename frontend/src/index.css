@@ -1,1 +1,40 @@
 @import "tailwindcss";
+
+@theme {
+  --color-void: #090d16;
+  --color-panel: #111827;
+  --color-edge: #1f2937;
+  --color-cyan: #00f0ff;
+  --color-emerald: #10b981;
+  --color-amber: #f59e0b;
+  --color-crimson: #ef4444;
+  --color-violet: #a78bfa;
+  --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+html, body { background: var(--color-void); }
+body { color: #e5e7eb; }
+
+.glass {
+  background: color-mix(in srgb, var(--color-panel) 78%, transparent);
+  border: 1px solid var(--color-edge);
+  backdrop-filter: blur(10px);
+}
+
+.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* chart animations */
+.chart-draw { stroke-dasharray: 1; stroke-dashoffset: 1; animation: chart-draw 900ms ease-out forwards; }
+@keyframes chart-draw { to { stroke-dashoffset: 0; } }
+.chart-grow { transform-box: fill-box; transform-origin: bottom; animation: chart-grow 600ms ease-out both; }
+@keyframes chart-grow { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+.chart-fade { animation: chart-fade 700ms ease-out both; }
+@keyframes chart-fade { from { opacity: 0; } to { opacity: 1; } }
+.ring-anim { transition: stroke-dashoffset 1s ease-out; }
+
+.scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+.scrollbar-thin::-webkit-scrollbar-thumb { background: #1f2937; border-radius: 3px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .chart-draw, .chart-grow, .chart-fade { animation: none; stroke-dashoffset: 0; }
+}
