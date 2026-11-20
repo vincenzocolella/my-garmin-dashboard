@@ -27,7 +27,7 @@ GARMIN_PASSWORD = os.getenv("GARMIN_PASSWORD")
 # Reusing tokens avoids a full login on every restart, which Garmin rate-limits (HTTP 429).
 GARMIN_TOKENS = os.getenv("GARMIN_TOKENS") or str(Path.home() / ".garminconnect")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 # Shared secret required by every /api call. Leave empty only for local development.
 APP_TOKEN = os.getenv("APP_TOKEN", "")
 ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",") if o.strip()]
