@@ -7,6 +7,40 @@ import { hrZones, overtrainingRisk, runningCoachText, sessionCritique } from '..
 import { fmt, fmtDay, fmtDuration, fmtPace, isNum, signed } from '../lib/util';
 
 const ZONE_COLORS = { transition: C.blue, fresh: C.cyan, neutral: C.slate, optimal: C.emerald, risk: C.crimson };
+const TSB_ZONES = [
+  { from: 20, to: 100, color: ZONE_COLORS.transition, label: 'Transizione' },
+  { from: 5, to: 20, color: ZONE_COLORS.fresh, label: 'Freschezza' },
+  { from: -10, to: 5, color: ZONE_COLORS.neutral, label: 'Zona grigia' },
+  { from: -30, to: -10, color: ZONE_COLORS.optimal, label: 'Ottimale' },
+  { from: -200, to: -30, color: ZONE_COLORS.risk, label: 'Alto rischio' },
+];
+
+/** Horizontal TSB scale with a marker: readable at any width. */
+function FormScale({ tsb }) {
+  const lo = -45;
+  const hi = 35;
+  const pos = (v) => ((Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo)) * 100;
+  const segs = [...TSB_ZONES].reverse().map((z) => ({ ...z, a: pos(Math.max(lo, z.from)), b: pos(Math.min(hi, z.to)) }));
+  return (
+    <div className="mt-4">
+      <div className="mb-1 flex items-baseline justify-between text-[10px] uppercase tracking-[0.16em] text-gray-500">
+        <span>Forma oggi</span>
+        <span className="num text-sm normal-case tracking-normal" style={{ color: ZONE_COLORS[tsbZone(tsb)?.key] }}>{signed(tsb, 1)} · {tsbZone(tsb)?.label}</span>
+      </div>
+      <div className="relative h-3 w-full overflow-hidden rounded-full">
+        {segs.map((z) => <div key={z.label} className="absolute inset-y-0" style={{ left: `${z.a}%`, width: `${z.b - z.a}%`, background: z.color, opacity: 0.55 }} />)}
+      </div>
+      {isNum(tsb) && (
+        <div className="relative h-4">
+          <div className="absolute -translate-x-1/2 text-xs leading-none text-white" style={{ left: `${pos(tsb)}%` }}>▲</div>
+        </div>
+      )}
+      <div className="relative h-3 text-[9px] text-gray-500 num">
+        {[-30, -10, 5, 20].map((t) => <span key={t} className="absolute -translate-x-1/2" style={{ left: `${pos(t)}%` }}>{t > 0 ? `+${t}` : t}</span>)}
+      </div>
+    </div>
+  );
+}
 
 function PmcCard({ a }) {
   const p = a.pmc.latest ?? {};
@@ -28,23 +62,21 @@ function PmcCard({ a }) {
           { key: 'ctl', label: 'Fitness (CTL)', type: 'area', color: C.cyan, width: 2.5 },
           { key: 'atl', label: 'Fatica (ATL)', color: C.crimson },
         ]} />
-      <div className="mt-2">
-        <TimeChart rows={a.pmc.rows} height={170} left={{ label: 'TSB' }} right={{ min: 0, max: 2.2, label: 'ACWR', format: (v) => fmt(v, 1) }}
-          zones={[
-            { from: 20, to: 100, color: ZONE_COLORS.transition, label: 'Transizione' },
-            { from: 5, to: 20, color: ZONE_COLORS.fresh, label: 'Freschezza' },
-            { from: -10, to: 5, color: ZONE_COLORS.neutral, label: 'Zona grigia' },
-            { from: -30, to: -10, color: ZONE_COLORS.optimal, label: 'Ottimale' },
-            { from: -200, to: -30, color: ZONE_COLORS.risk, label: 'Alto rischio' },
-          ]}
-          refLines={[{ y: 1.3, axis: 'right', color: C.amber, label: 'ACWR 1.3' }, { y: 1.5, axis: 'right', color: C.crimson, label: '1.5' }]}
-          series={[
-            { key: 'tsb', label: 'Forma (TSB)', type: 'bar', color: C.emerald, format: (v) => signed(v, 1) },
-            { key: 'acwr', label: 'ACWR', axis: 'right', color: C.amber, width: 1.5, format: (v) => fmt(v, 2) },
-          ]}
-          barColor={(row) => ZONE_COLORS[tsbZone(row.tsb)?.key] ?? C.slate} />
-      </div>
-      <Legend items={[{ label: 'CTL', color: C.cyan }, { label: 'ATL', color: C.crimson }, { label: 'Carico', color: C.slate }, { label: 'TSB (colore = zona)', color: C.emerald }, { label: 'ACWR', color: C.amber }]} />
+      <FormScale tsb={p.tsb} />
+      <div className="mt-4 text-[10px] uppercase tracking-[0.16em] text-gray-500">Forma (TSB) giorno per giorno</div>
+      <TimeChart rows={a.pmc.rows} height={150} left={{ label: 'TSB' }}
+        zones={TSB_ZONES}
+        refLines={[{ y: 0, color: C.slate }]}
+        series={[{ key: 'tsb', label: 'Forma (TSB)', type: 'bar', color: C.emerald, format: (v) => signed(v, 1) }]}
+        barColor={(row) => ZONE_COLORS[tsbZone(row.tsb)?.key] ?? C.slate}
+        tooltipExtra={(row) => <div className="text-[10px] text-gray-500">{tsbZone(row.tsb)?.label}</div>} />
+      <Legend items={TSB_ZONES.map((z) => ({ label: z.label, color: z.color }))} />
+      <div className="mt-4 text-[10px] uppercase tracking-[0.16em] text-gray-500">ACWR (carico acuto / cronico)</div>
+      <TimeChart rows={a.pmc.rows} height={120} left={{ min: 0, max: 2.2, format: (v) => fmt(v, 1) }}
+        zones={[{ from: 0.8, to: 1.3, color: C.emerald, label: 'sicuro' }, { from: 1.5, to: 2.2, color: C.crimson, label: 'rischio' }]}
+        refLines={[{ y: 1.3, color: C.amber }, { y: 1.5, color: C.crimson }]}
+        series={[{ key: 'acwr', label: 'ACWR', color: C.amber, width: 2, format: (v) => fmt(v, 2) }]} />
+      <Legend items={[{ label: 'CTL fitness', color: C.cyan }, { label: 'ATL fatica', color: C.crimson }, { label: 'Carico', color: C.slate }, { label: 'ACWR 0,8–1,3 sicuro', color: C.emerald }, { label: '> 1,5 rischio', color: C.crimson }]} />
     </Card>
   );
 }

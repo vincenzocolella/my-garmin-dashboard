@@ -1,12 +1,23 @@
 import {
   addDays, clamp, dateRange, diffDays, isNum, linreg, mean, pctChange, round, sd, sum, weekStart,
 } from './util';
+import { detectIllness } from './illness';
+import { planStatus } from './plan';
 
 /** Strength sessions feed the PMC with half of their session-RPE load (neuromuscular fatigue is only partly systemic). */
 const PMC_STRENGTH_FACTOR = 0.5;
 export const FOCUS_OPTIONS = ['Upper', 'Lower', 'Full Body', 'Core'];
 
 const startMs = (a) => Date.parse(`${(a.start || `${a.date} 12:00:00`).replace(' ', 'T')}Z`);
+
+/**
+ * Map a deviation from the personal baseline to a 0-100 score where "normal for you" ≈ 88,
+ * one SD better = 100 and every SD worse costs 30 points (−1 SD → 58, −2 SD → 28).
+ * `z` must already be oriented so that positive = better.
+ */
+export const baselineScore = (z) => clamp(z >= 0 ? 88 + 12 * Math.min(z, 1) : 88 + 30 * z);
+/** Garmin's stress: ≤ 20 is resting level (100), every point above costs 1.4. */
+export const stressScore = (stress) => clamp(100 - Math.max(0, stress - 20) * 1.4);
 
 function weighted(parts) {
   const ok = parts.filter(([v]) => isNum(v));
@@ -42,17 +53,8 @@ export const RACES = [
 ];
 
 // --------------------------------------------------------------------- activities
-export function normalizeActivities(dataset, manualLogs = [], overrides = {}) {
-  const manual = manualLogs.map((m) => ({
-    ...m,
-    kind: 'strength',
-    type: 'strength_training',
-    manual: true,
-    distance: 0,
-    start: m.start || `${m.date} 18:00:00`,
-    strength: { sets: null, reps: null, volumeKg: isNum(m.volumeKg) ? m.volumeKg : null, focus: m.focus },
-  }));
-  return [...(dataset?.activities ?? []), ...manual]
+export function normalizeActivities(dataset, overrides = {}) {
+  return [...(dataset?.activities ?? [])]
     .filter((a) => a.date)
     .map((a) => {
       const o = overrides[a.id] ?? {};
@@ -109,7 +111,7 @@ function enrich(a, prof) {
 }
 
 // --------------------------------------------------------------------- main
-export function computeAnalytics(dataset, { rangeDays = 30, settings = {}, manualLogs = [], overrides = {} } = {}) {
+export function computeAnalytics(dataset, { rangeDays = 30, settings = {}, overrides = {} } = {}) {
   const today = dataset.today;
   const rangeStart = addDays(today, -(rangeDays - 1));
   const need = Number(settings.sleepNeedH) || 8;
@@ -123,7 +125,7 @@ export function computeAnalytics(dataset, { rangeDays = 30, settings = {}, manua
   const inRange = (date) => date >= rangeStart && date <= today;
 
   // ---- HR profile
-  const rawActs = normalizeActivities(dataset, manualLogs, overrides);
+  const rawActs = normalizeActivities(dataset, overrides);
   const observedMax = Math.max(0, ...rawActs.map((a) => a.maxHr ?? 0));
   const recentRhr = mean(rows.slice(-30).map((r) => r.rhr));
   const prof = {
@@ -140,13 +142,14 @@ export function computeAnalytics(dataset, { rangeDays = 30, settings = {}, manua
     const prev = rows.slice(Math.max(0, i - 30), i);
     const hb = stats(prev.map((r) => r.hrv), 3);
     const rb = stats(prev.map((r) => r.rhr), 1.5);
-    const hrvS = isNum(d.hrv) && isNum(hb.mean) ? clamp(50 + (20 * (d.hrv - hb.mean)) / hb.sd) : null;
-    const rhrS = isNum(d.rhr) && isNum(rb.mean) ? clamp(50 - (20 * (d.rhr - rb.mean)) / rb.sd) : null;
+    const hrvS = isNum(d.hrv) && isNum(hb.mean) ? baselineScore((d.hrv - hb.mean) / hb.sd) : null;
+    const rhrS = isNum(d.rhr) && isNum(rb.mean) ? baselineScore(-(d.rhr - rb.mean) / rb.sd) : null;
     const autonomic = weighted([[hrvS, 0.7], [rhrS, 0.3]]);
-    const sleepS = d.sleep?.score ?? (d.sleep?.total ? clamp((d.sleep.total / 3600 / need) * 100) : null);
+    // Garmin sleep score 80 ("good") → 88, 90+ → ~100
+    const sleepS = isNum(d.sleep?.score) ? clamp(d.sleep.score * 1.1) : d.sleep?.total ? clamp((d.sleep.total / 3600 / need) * 100) : null;
     const stressVal = d.stress ?? rows[i - 1]?.stress;
-    const stressS = isNum(stressVal) ? clamp(100 - stressVal * 1.25) : null;
-    const bbS = isNum(d.bbMax) ? d.bbMax : null;
+    const stressS = isNum(stressVal) ? stressScore(stressVal) : null;
+    const bbS = isNum(d.bbMax) ? clamp(d.bbMax * 1.05) : null;
     return {
       date: d.date,
       score: round(weighted([[autonomic, 0.35], [sleepS, 0.25], [stressS, 0.2], [bbS, 0.2]])),
@@ -235,6 +238,7 @@ export function computeAnalytics(dataset, { rangeDays = 30, settings = {}, manua
     deepPct7: round(mean(sleepRows.slice(-7).map((r) => (r.total ? (r.deep / r.total) * 100 : null))), 1),
     remPct7: round(mean(sleepRows.slice(-7).map((r) => (r.total ? (r.rem / r.total) * 100 : null))), 1),
     lastNight: latest.sleep ? { ...latest.sleep, hours: round(latest.sleep.total / 3600, 2) } : null,
+    ...sleepPatterns(rows.slice(Math.max(0, latestIdx - 13), latestIdx + 1), rows.filter((r) => inRange(r.date))),
   };
 
   // ---- autonomic nervous system: intraday + daily
@@ -385,8 +389,10 @@ export function computeAnalytics(dataset, { rangeDays = 30, settings = {}, manua
     avgRpe: round(mean(strengthSessions.map((a) => a.rpe)), 1),
   };
 
-  return {
-    today, rangeStart, rangeDays, source: dataset.source, scenario: dataset.scenario,
+  const illness = detectIllness(rows, acts, { sensitivity: settings.illnessSensitivity, today });
+
+  const result = {
+    today, rangeStart, rangeDays, source: dataset.source, scenario: dataset.scenario, illness,
     profile: prof,
     latest, latestDate: latest.date,
     readiness, longevity, hrvRhr, hrvTrend, sleep, ans, pmc,
@@ -397,6 +403,42 @@ export function computeAnalytics(dataset, { rangeDays = 30, settings = {}, manua
       hours: round(sum(actsInRange.map((a) => a.duration)) / 3600, 1),
       strength: strengthSessions.length,
     },
+  };
+  result.plan = planStatus(result);
+  return result;
+}
+
+// Bed/wake time regularity and how sleep drives the next HRV reading.
+function sleepPatterns(last14, range) {
+  // Garmin "local" timestamps are wall-clock encoded as UTC; hours after noon wrap to negative so 23:30 → -0.5
+  const hourOf = (ts, wrap) => {
+    if (!isNum(ts)) return null;
+    const d = new Date(ts);
+    const h = d.getUTCHours() + d.getUTCMinutes() / 60;
+    return wrap && h > 12 ? h - 24 : h;
+  };
+  const beds = last14.map((r) => hourOf(r.sleep?.start, true)).filter(isNum);
+  const wakes = last14.map((r) => hourOf(r.sleep?.end, false)).filter(isNum);
+  const pairs = range.filter((r) => isNum(r.hrv) && r.sleep?.total).map((r) => ({ x: r.sleep.total / 3600, y: r.hrv }));
+  let corr = null;
+  if (pairs.length >= 7) {
+    const mx = mean(pairs.map((p) => p.x));
+    const my = mean(pairs.map((p) => p.y));
+    const sxy = sum(pairs.map((p) => (p.x - mx) * (p.y - my)));
+    const sxx = sum(pairs.map((p) => (p.x - mx) ** 2));
+    const syy = sum(pairs.map((p) => (p.y - my) ** 2));
+    corr = sxx && syy ? sxy / Math.sqrt(sxx * syy) : null;
+  }
+  const reg = linreg(pairs);
+  const fmtClock = (h) => (isNum(h) ? `${String(Math.floor((h + 24) % 24)).padStart(2, '0')}:${String(Math.round((((h % 1) + 1) % 1) * 60) % 60).padStart(2, '0')}` : null);
+  return {
+    bedtimeAvg: fmtClock(mean(beds)),
+    wakeAvg: fmtClock(mean(wakes)),
+    bedtimeSdMin: isNum(sd(beds)) ? Math.round(sd(beds) * 60) : null,
+    wakeSdMin: isNum(sd(wakes)) ? Math.round(sd(wakes) * 60) : null,
+    sleepHrvCorr: round(corr, 2),
+    hrvPerHour: reg ? round(reg.slope, 1) : null, // ms of HRV per extra hour of sleep
+    shortNights14: last14.filter((r) => r.sleep?.total && r.sleep.total < 6 * 3600).length,
   };
 }
 

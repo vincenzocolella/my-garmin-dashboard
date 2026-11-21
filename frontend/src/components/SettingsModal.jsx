@@ -43,7 +43,7 @@ async function downloadFile(url, name) {
   }
 }
 
-export function SettingsModal({ settings, onSave, onClose, onImport, dataset, notice }) {
+export function SettingsModal({ settings, onSave, onClose, onImport, onClearCache, dataset, notice }) {
   const [draft, setDraft] = useState(settings);
   const [test, setTest] = useState(null);
   const [importError, setImportError] = useState('');
@@ -168,6 +168,11 @@ export function SettingsModal({ settings, onSave, onClose, onImport, dataset, no
               <Field label="FC riposo" hint="vuoto = media 30gg"><input className={input} type="number" value={draft.restHr} onChange={set('restHr')} placeholder="auto" /></Field>
               <Field label="Bisogno sonno (h)"><input className={input} type="number" step="0.25" value={draft.sleepNeedH} onChange={set('sleepNeedH')} /></Field>
             </div>
+            <Field label="Sensibilità rilevazione malesseri" hint="Alta = segnala anche deviazioni deboli (più falsi allarmi)">
+              <select className={input} value={draft.illnessSensitivity} onChange={set('illnessSensitivity')}>
+                <option value="bassa">Bassa</option><option value="media">Media</option><option value="alta">Alta</option>
+              </select>
+            </Field>
           </Section>
 
           <Section title="Strumenti">
@@ -177,6 +182,7 @@ export function SettingsModal({ settings, onSave, onClose, onImport, dataset, no
               <Button onClick={() => downloadFile(`${REPO_RAW}/requirements.txt`, 'requirements.txt')}><Download size={12} />requirements.txt</Button>
               <Button onClick={exportJson} disabled={!dataset}><Download size={12} />Esporta JSON attivo</Button>
               <Button onClick={() => fileRef.current?.click()}><Upload size={12} />Importa JSON</Button>
+              {onClearCache && <Button onClick={() => { onClearCache(); onClose(); }}>Svuota cache storico</Button>}
               <input ref={fileRef} type="file" accept="application/json,.json" className="hidden" onChange={importJson} />
             </div>
             {importError && <p className="text-xs text-crimson">{importError}</p>}

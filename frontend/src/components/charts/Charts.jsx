@@ -144,7 +144,7 @@ export function TimeChart({
               return y2 > y1 ? (
                 <g key={i}>
                   <rect x={M.l} y={y1} width={iw} height={y2 - y1} fill={z.color} fillOpacity={0.08} />
-                  {z.label && y2 - y1 > 12 && <text x={M.l + iw - 4} y={y1 + 11} textAnchor="end" fontSize="9" fill={z.color} opacity={0.8}>{z.label}</text>}
+                  {z.label && y2 - y1 > 12 && width >= 560 && <text x={M.l + iw - 4} y={y1 + 11} textAnchor="end" fontSize="9" fill={z.color} opacity={0.8}>{z.label}</text>}
                 </g>
               ) : null;
             })}

@@ -10,13 +10,37 @@ import { computeAnalytics } from './lib/analytics';
 import { apiFetch } from './lib/api';
 import { generateDemo, SCENARIOS } from './lib/demo';
 import { useSettings, useStored } from './lib/settings';
+import { addDays, localToday } from './lib/util';
 import { HealthTab } from './tabs/HealthTab';
+import { PlanTab } from './tabs/PlanTab';
+import { WellnessTab } from './tabs/WellnessTab';
 import { RunningTab } from './tabs/RunningTab';
 import { StrengthTab } from './tabs/StrengthTab';
 
+const DAYS_CACHE_KEY = 'bio-os-days-v1';
+const HISTORY_DAYS = 180;
+
+function readDaysCache(base) {
+  try {
+    const c = JSON.parse(localStorage.getItem(DAYS_CACHE_KEY) ?? '{}');
+    return c.base === base ? c.days ?? {} : {};
+  } catch {
+    return {};
+  }
+}
+function writeDaysCache(base, days) {
+  const keep = addDays(localToday(), -(HISTORY_DAYS + 10));
+  const pruned = Object.fromEntries(Object.entries(days).filter(([d]) => d >= keep));
+  try {
+    localStorage.setItem(DAYS_CACHE_KEY, JSON.stringify({ base, days: pruned }));
+  } catch {
+    /* quota exceeded: the app still works, it just refetches */
+  }
+}
+const daysFromCache = (cache, today) => Object.values(cache).filter((d) => d.date >= addDays(today, -(HISTORY_DAYS - 1)) && d.date <= today).sort((x, y) => (x.date < y.date ? -1 : 1));
+
 export default function App() {
   const [settings, updateSettings] = useSettings();
-  const [manualLogs, setManualLogs] = useStored('bio-os-strength-log', []);
   const [overrides, setOverrides] = useStored('bio-os-overrides', {});
   const [range, setRange] = useStored('bio-os-range', 30);
   const [tab, setTab] = useStored('bio-os-tab', 'health');
@@ -29,7 +53,9 @@ export default function App() {
   const [chatOpen, setChatOpen] = useState(false);
   const [judgeTrigger, setJudgeTrigger] = useState(0);
   const [syncing, setSyncing] = useState(false);
+  const [history, setHistory] = useState({ loading: false, done: 0, total: 0 });
   const inflight = useRef(null);
+  const backfilled = useRef('');
 
   const { dataSource, scenario, apiBase, appToken } = settings;
   const fetchDays = range > 30 ? 90 : 30; // baselines need 30 days even when showing 7D/14D
@@ -52,8 +78,20 @@ export default function App() {
       inflight.current = ctrl;
       setStatus((s) => ({ ...s, state: 'loading' }));
       try {
-        const ds = await apiFetch(conn, `/telemetry?days=${fetchDays}${refresh ? '&refresh=true' : ''}`, { signal: ctrl.signal });
-        setDataset(ds);
+        // past days never change: ask the backend only for days missing from the browser cache
+        const cache = readDaysCache(conn.apiBase);
+        const today = localToday();
+        let since = addDays(today, -1);
+        for (let d = addDays(today, -(fetchDays - 1)); d <= addDays(today, -2); d = addDays(d, 1)) {
+          if (!cache[d]) {
+            since = d;
+            break;
+          }
+        }
+        const ds = await apiFetch(conn, `/telemetry?days=${fetchDays}&since=${since}${refresh ? '&refresh=true' : ''}`, { signal: ctrl.signal });
+        ds.days.forEach((d) => (cache[d.date] = d));
+        writeDaysCache(conn.apiBase, cache);
+        setDataset({ ...ds, days: daysFromCache(cache, today) });
         setStatus({ state: 'live', at: new Date() });
       } catch (e) {
         if (e.name === 'AbortError') return;
@@ -71,6 +109,45 @@ export default function App() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // background backfill of up to HISTORY_DAYS of daily vitals (wellness scan), 31 days per request
+  useEffect(() => {
+    if (dataSource !== 'garmin' || status.state !== 'live' || backfilled.current === conn.apiBase) return undefined;
+    backfilled.current = conn.apiBase;
+    let alive = true;
+    (async () => {
+      const today = localToday();
+      const cache = readDaysCache(conn.apiBase);
+      const missing = [];
+      for (let d = addDays(today, -(HISTORY_DAYS - 1)); d <= addDays(today, -2); d = addDays(d, 1)) if (!cache[d]) missing.push(d);
+      const chunks = [];
+      for (const d of missing) {
+        const last = chunks.at(-1);
+        if (last && addDays(last.end, 1) === d && last.n < 31) {
+          last.end = d;
+          last.n++;
+        } else chunks.push({ start: d, end: d, n: 1 });
+      }
+      if (!chunks.length) return;
+      setHistory({ loading: true, done: 0, total: chunks.length });
+      for (const [i, c] of chunks.reverse().entries()) {
+        if (!alive) return;
+        try {
+          const res = await apiFetch(conn, `/days?start=${c.start}&end=${c.end}`);
+          res.days.forEach((d) => (cache[d.date] = d));
+          writeDaysCache(conn.apiBase, cache);
+          setDataset((prev) => (prev?.source === 'garmin' ? { ...prev, days: daysFromCache(cache, today) } : prev));
+          setHistory({ loading: i + 1 < chunks.length, done: i + 1, total: chunks.length });
+        } catch {
+          setHistory((h) => ({ ...h, loading: false, error: true }));
+          return;
+        }
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [dataSource, status.state, conn]);
 
   // pseudo-live polling
   useEffect(() => {
@@ -93,12 +170,11 @@ export default function App() {
       dataset
         ? computeAnalytics(dataset, {
             rangeDays: range,
-            settings: { maxHr: settings.maxHr, restHr: settings.restHr, sleepNeedH: settings.sleepNeedH },
-            manualLogs,
+            settings: { maxHr: settings.maxHr, restHr: settings.restHr, sleepNeedH: settings.sleepNeedH, illnessSensitivity: settings.illnessSensitivity },
             overrides,
           })
         : null,
-    [dataset, range, settings.maxHr, settings.restHr, settings.sleepNeedH, manualLogs, overrides],
+    [dataset, range, settings.maxHr, settings.restHr, settings.sleepNeedH, settings.illnessSensitivity, overrides],
   );
 
   const syncAndJudge = async () => {
@@ -141,8 +217,10 @@ export default function App() {
             <ErrorBoundary>
               <JudgePanel trigger={judgeTrigger} onPersona={(p) => updateSettings({ persona: p })} />
               {tab === 'health' && <HealthTab a={analytics} />}
+              {tab === 'plan' && <PlanTab a={analytics} />}
+              {tab === 'wellness' && <WellnessTab a={analytics} sensitivity={settings.illnessSensitivity} onSensitivity={(v) => updateSettings({ illnessSensitivity: v })} history={history} />}
               {tab === 'running' && <RunningTab a={analytics} />}
-              {tab === 'strength' && <StrengthTab a={analytics} overrides={overrides} setOverrides={setOverrides} setManualLogs={setManualLogs} />}
+              {tab === 'strength' && <StrengthTab a={analytics} overrides={overrides} setOverrides={setOverrides} />}
             </ErrorBoundary>
             <ChatDrawer open={chatOpen} onClose={() => setChatOpen(false)} />
           </AIProvider>
@@ -155,7 +233,8 @@ export default function App() {
       {settingsOpen && (
         <SettingsModal settings={settings} dataset={dataset} notice={settingsNotice}
           onSave={updateSettings} onClose={() => setSettingsOpen(false)}
-          onImport={(ds) => { setImported(ds); updateSettings({ dataSource: 'import' }); }} />
+          onImport={(ds) => { setImported(ds); updateSettings({ dataSource: 'import' }); }}
+          onClearCache={() => { localStorage.removeItem(DAYS_CACHE_KEY); backfilled.current = ''; load({ refresh: true }); }} />
       )}
     </div>
   );

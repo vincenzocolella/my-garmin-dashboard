@@ -1,10 +1,12 @@
-import { Bot, Dna, Dumbbell, Footprints, Loader2, MessageSquare, RefreshCw, Settings, Zap } from 'lucide-react';
+import { Bot, Dna, Dumbbell, Footprints, Loader2, MessageSquare, RefreshCw, Settings, Stethoscope, Target, Zap } from 'lucide-react';
 import { SCENARIOS } from '../lib/demo';
 
 export const TABS = [
   { key: 'health', label: 'Salute & Recupero', icon: Dna },
-  { key: 'running', label: 'Performance Corsa', icon: Footprints },
-  { key: 'strength', label: 'Forza & Hybrid', icon: Dumbbell },
+  { key: 'plan', label: 'Piano Sub-2', icon: Target },
+  { key: 'running', label: 'Corsa', icon: Footprints },
+  { key: 'strength', label: 'Forza', icon: Dumbbell },
+  { key: 'wellness', label: 'Malesseri', icon: Stethoscope },
 ];
 export const RANGES = [7, 14, 30, 90];
 
@@ -58,7 +60,7 @@ export function Header({ tab, setTab, range, setRange, status, dataset, dataSour
             <button key={key} type="button" onClick={() => setTab(key)}
               className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs transition ${tab === key ? 'bg-cyan/15 text-cyan shadow-[inset_0_0_0_1px_rgba(0,240,255,0.35)]' : 'text-gray-400 hover:text-gray-200'}`}>
               <Icon size={14} />
-              <span className="hidden sm:inline">{label}</span>
+              <span className="hidden md:inline">{label}</span>
             </button>
           ))}
         </nav>

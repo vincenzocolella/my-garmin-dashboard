@@ -28,23 +28,26 @@ npm install && npm run dev    # http://localhost:5173 — enter APP_TOKEN on fir
 
 ## Dashboard
 
-Three tabs plus a global time selector (7D/14D/30D/90D):
+Five tabs plus a global time selector (7D/14D/30D/90D). Every card has an **ⓘ** button explaining what the metric is, how it is computed and how to read it ([frontend/src/lib/info.js](frontend/src/lib/info.js)).
 
-- **Health & Recovery**: Readiness score (multi-ring: HRV+RHR, sleep, stress, Body Battery vs 30-day baseline), longevity index, HRV/RHR matrix with a ±1 SD band, sleep architecture and 7-day debt, intraday stress vs Body Battery (ineffective recovery, post-meal and evening stress), AI Bio-Audit.
-- **Running Performance**: PMC (CTL/ATL/TSB with zones) + ACWR, Efficiency Factor and Pa:HR decoupling, 80/20 polarized check, race predictor (VDOT + Garmin), sortable run table with per-session critique, AI Running Coach.
-- **Strength & Hybrid**: cardio vs neuromuscular load and interference conflicts (leg day ↔ intervals/long run), balance radar, weekly tonnage, editable RPE/focus, quick manual log, AI Hybrid Strategist.
+- **Health & Recovery**: Readiness (0-100, ~88 = your normal) from HRV+RHR, sleep, stress, Body Battery vs a 30-day baseline; longevity index; HRV/RHR matrix with ±1 SD band; sleep architecture, debt and bedtime regularity; intraday stress vs Body Battery; AI Sleep Coach and AI Bio-Audit.
+- **Sub-2 Plan**: the 22-week half-marathon plan from [training-app](https://github.com/vincenzocolella/training-app) ([frontend/src/lib/planData.js](frontend/src/lib/planData.js)). Garmin runs are matched automatically to planned sessions; pace blocks and control HR are checked from 1 km laps; the A/B/C checkpoints (weeks 9/13/15/18) are graded automatically; the optional second run is advised from readiness/load/wellness. AI Plan Coach applies the plan's rules.
+- **Running**: PMC (CTL/ATL with a TSB scale, TSB and ACWR charts), efficiency factor and decoupling, 80/20 check, race predictor, sortable runs table, AI Running Coach.
+- **Strength**: cardio vs neuromuscular load, interference conflicts, balance radar, tonnage, editable RPE/focus, AI Hybrid Strategist.
+- **Wellness**: scans up to 180 days for periods when you were likely unwell. A day is flagged when RHR↑ and HRV↓ deviate together from a robust 30-day baseline (median/MAD), supported by stress, sleep and Body Battery. Days are grouped into episodes, classified (illness / overreaching / sleep debt / stress), and shown with the training done during the episode and the recovery time. AI Health Detective.
 
-AI everywhere: global Judge with 3 personas (Quant / Sergeant / Strategist), per-card micro-insights (one batched JSON call), "Ask Your Telemetry" chat. Providers: backend (Gemini on the server, recommended), Gemini/OpenAI key in the browser, or the **heuristic engine only**, which works offline and is always shown as the first draft.
+AI everywhere: global Judge with 3 personas, per-card micro-insights (one batched JSON call), "Ask Your Telemetry" chat. Providers: backend (Gemini on the server, recommended), Gemini/OpenAI key in the browser, or the deterministic **heuristic engine** (always available, offline).
 
-**Demo** mode with 4 scenarios (Balanced, Overtraining, Peak Form, Sleep Deprivation) and JSON import/export, all from ⚙️ Settings.
+Daily vitals are cached in the browser: each load only fetches missing days, and up to 180 days of history are backfilled in the background in 31-day chunks.
 
-All analytics run in the browser ([frontend/src/lib/analytics.js](frontend/src/lib/analytics.js)); the backend only fetches and caches the data.
+**Demo** mode with 4 scenarios (200 days, 2 injected illness episodes, plan-shaped key sessions with laps) and JSON import/export, from ⚙️ Settings.
 
 ## Endpoints (all `/api/*` require `Authorization: Bearer $APP_TOKEN`)
 
 | Route | Content |
 |---|---|
-| `GET /api/telemetry?days=30` | daily vitals (HRV, RHR, sleep stages, stress, Body Battery, steps), today's intraday stress/BB, activities for `days+42` days (HR zones, cadence, TE, decoupling from splits, sets/tonnage/focus for strength), VO2max, Garmin race predictions |
+| `GET /api/telemetry?days=30&since=YYYY-MM-DD` | daily vitals (only days ≥ `since` plus the last 2) (HRV, RHR, sleep stages, stress, Body Battery, steps), today's intraday stress/BB, activities for 222 days (HR zones, cadence, TE, 1 km laps and decoupling from splits, sets/tonnage/focus for strength), VO2max, Garmin race predictions |
+| `GET /api/days?start=&end=` | daily vitals only, ≤ 31 days per call (history backfill) |
 | `GET /api/status` | which features are configured (Garmin, Gemini model) |
 | `POST /api/ai` | `{system, prompt, json}` → Gemini text |
 | `GET /health` | no auth, for the host's health check |

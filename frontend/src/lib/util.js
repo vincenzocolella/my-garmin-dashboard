@@ -54,7 +54,11 @@ export function linreg(points) {
   return { slope, intercept: my - slope * mx, r2: syy ? (sxy * sxy) / (sxx * syy) : 0 };
 }
 
-export const fmt = (v, d = 0, fallback = '—') => (isNum(v) ? v.toLocaleString('it-IT', { minimumFractionDigits: d, maximumFractionDigits: d }) : fallback);
+export const fmt = (v, d = 0, fallback = '—') => {
+  if (!isNum(v)) return fallback;
+  const r = Math.round(v * 10 ** d) / 10 ** d;
+  return (Object.is(r, -0) ? 0 : r).toLocaleString('it-IT', { minimumFractionDigits: d, maximumFractionDigits: d });
+};
 export const signed = (v, d = 0) => (isNum(v) ? `${v > 0 ? '+' : ''}${fmt(v, d)}` : '—');
 
 export function fmtPace(secPerKm) {

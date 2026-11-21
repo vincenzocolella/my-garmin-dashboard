@@ -52,6 +52,14 @@ export function buildContext(a) {
       conflitti: a.strength.conflicts.slice(0, 6).map((c) => `${c.date} ${c.strength.strength?.focus ?? 'forza'} → ${c.run.name} (${c.gapH} h)`),
     },
     rischio_overtraining_0_100: overtrainingRisk(a),
+    sonno_regolarita: { letto_medio: a.sleep.bedtimeAvg, sveglia_media: a.sleep.wakeAvg, sd_letto_min: a.sleep.bedtimeSdMin, sd_sveglia_min: a.sleep.wakeSdMin, corr_sonno_hrv: a.sleep.sleepHrvCorr, hrv_ms_per_ora_sonno: a.sleep.hrvPerHour, notti_sotto_6h_14gg: a.sleep.shortNights14 },
+    malesseri: {
+      attivo_ora: a.illness.current.active,
+      segnali_oggi: a.illness.current.today?.signals,
+      giorni_analizzati: a.illness.stats.daysScanned,
+      episodi: a.illness.episodes.slice(0, 8).map((e) => ({ dal: e.start, al: e.end, giorni: e.days, tipo: e.label, confidenza: e.confidence, fc_riposo_max_delta: e.markers.rhr, hrv_min_pct: e.markers.hrv, carico_prima_x: e.loadRatio, sonno_prima_delta_h: e.sleepBefore, sedute_dure_durante: e.hardDuring.length, rientro_giorni: e.recoveryDays })),
+    },
+    piano_mezza: planContext(a.plan),
     serie_giornaliere: {
       colonne: ['data', 'hrv', 'fc_riposo', 'sonno_h', 'sonno_score', 'stress', 'bb_max', 'carico'],
       righe: a.hrvRhr.map((d, i) => {
@@ -76,6 +84,23 @@ export function buildContext(a) {
   };
 }
 
+function planContext(p) {
+  const brief = (s) => ({ id: s.id, tipo: s.type, titolo: s.title, km: s.targetKm, ritmo: s.pace, fc: s.hr, facoltativa: s.optional, stato: s.state, corsa_abbinata: s.match ? { data: s.match.run.date, km: round(s.match.run.distance / 1000, 2), passo: fmtPace(s.match.run.pace), fc: s.match.run.avgHr, punteggio: s.match.score } : null, note: s.compliance?.notes.map((n) => n.text) });
+  return {
+    obiettivo: 'mezza maratona sotto le 2 ore (gara 4 aprile 2027), 1 uscita chiave a settimana + 1 facoltativa a settimane alterne',
+    settimana: `${p.weekNo}/${p.totalWeeks}`, fase: p.current.phaseTitle, tag: p.current.tag ?? null,
+    obiettivo_attuale: p.goal, ritmo_gara_garmin: p.goalPace,
+    aderenza_pct: p.adherence, chiavi_fatte: p.keyDone, chiavi_parziali: p.keyPartial, chiavi_saltate: p.keyMissed, saltate_di_fila: p.consecutiveMissed,
+    questa_settimana: p.current.sessions.map(brief),
+    settimana_scorsa: p.weeks.find((w) => w.week === p.weekNo - 1)?.sessions.map(brief) ?? [],
+    prossima_settimana: p.weeks.find((w) => w.week === p.weekNo + 1)?.sessions.map((s) => ({ titolo: s.title, desc: s.desc, km: s.targetKm, facoltativa: s.optional })) ?? [],
+    consiglio_facoltativa: p.optionalAdvice?.text ?? null,
+    controlli: p.gates.map((g) => ({ settimana: g.week, quando: g.when, esito: g.grade, dettaglio: g.detail })),
+    abitudini: { giorno_lungo: p.habits.longDayName, leg_day: p.habits.legDays, leg_day_nelle_48h_prima_del_lungo: p.habits.legClash },
+    fc_riposo_allarme_3gg: p.rhrAlarm,
+  };
+}
+
 // --------------------------------------------------------------------- prompts
 const BASE = `Sei BIO-OS, un sistema esperto di telemetria biometrica, fisiologia dello sport e biohacking.
 Rispondi SEMPRE in italiano. Basati solo sui dati JSON forniti: se un dato manca dillo, non inventarlo.
@@ -92,10 +117,13 @@ const TASKS = {
   judge: 'GIUDIZIO GLOBALE: giudica la giornata e le ultime settimane (recupero, bilanciamento corsa/pesi, sonno). Dimmi esattamente cosa sto sbagliando e la sessione ideale di oggi. Massimo 250 parole.',
   bioAudit: 'BIO-AUDIT: incrocia sonno, stress, HRV, FC a riposo e Body Battery. Valuta (in termini fisiologici) segni di infiammazione latente, sovraccarico del sistema nervoso o cattiva igiene del sonno. Chiudi con 3-5 prescrizioni pratiche per oggi. Massimo 220 parole.',
   runningCoach: 'AI RUNNING COACH: analizza il macro-ciclo (PMC, ACWR, distribuzione zone 80/20, Efficiency Factor, decoupling). Segnala se le corse facili sono troppo forti, stima il rischio di overtraining e genera la prossima sessione ideale con passi (min/km) e FC precisi. Massimo 250 parole.',
+  sleep: 'AI SLEEP COACH: analizza architettura del sonno (profondo, REM, veglia), debito, regolarità degli orari, legame tra ore di sonno e HRV, effetto di allenamenti serali e stress notturno. Chiudi con prescrizioni concrete e personalizzate (orario di letto preciso calcolato dalla sveglia media). Massimo 230 parole.',
+  illness: 'AI HEALTH DETECTIVE: analizza gli episodi di malessere rilevati (malattia, sovraccarico, debito di sonno, stress), il loro contesto (carico e sonno prima, allenamenti durante, tempi di rientro) e lo stato attuale. Individua i trigger ricorrenti e dai un protocollo di prevenzione e di rientro. Ricorda che è un’analisi statistica e non una diagnosi. Massimo 230 parole.',
+  plan: 'AI PLAN COACH del piano mezza maratona sub-2:00: valuta la settimana corrente e le sessioni abbinate automaticamente (aderenza a distanza, ritmi dei blocchi e FC di controllo), decidi se fare la seconda uscita facoltativa in base a readiness, carico e malesseri, applica le regole del piano (chiave saltata → ripeti la settimana, 2 saltate → rivedi obiettivo B/C, niente gambe pesanti nelle 48 h prima delle chiavi, gel dai lunghi della settimana 6, FC riposo +5 per 3 giorni → alleggerisci) e adatta i consigli ai dati reali. Indica giorno, ritmi e FC della prossima uscita. Massimo 250 parole.',
   hybrid: 'AI HYBRID STRATEGIST: valuta l’equilibrio tra forza e resistenza, i conflitti di interferenza e quando inserire le sedute di pesi rispetto ai lunghi e all’andamento HRV. Proponi una settimana tipo. Massimo 220 parole.',
 };
 
-export const INSIGHT_KEYS = ['readiness', 'longevity', 'hrvRhr', 'sleep', 'ans', 'pmc', 'ef', 'zones', 'race', 'runs', 'hybrid', 'volume'];
+export const INSIGHT_KEYS = ['readiness', 'longevity', 'hrvRhr', 'sleep', 'ans', 'pmc', 'ef', 'zones', 'race', 'runs', 'hybrid', 'volume', 'planOverview', 'planWeek', 'planGates', 'illnessNow', 'illnessTimeline', 'illnessPatterns'];
 
 export function systemFor(persona) {
   return `${BASE}\n${PERSONA_PROMPTS[persona] ?? PERSONA_PROMPTS.quant}`;
@@ -105,7 +133,7 @@ export function taskPrompt(task, a, extra = {}) {
   const ctx = JSON.stringify(buildContext(a));
   if (task === 'insights')
     return `Per ciascuna card della dashboard genera UNA frase diagnostica (max 160 caratteri), specifica e numerica, come "HRV in calo del 14% per 3 giorni consecutivi nonostante volume stabile: possibile stress extra-sportivo".
-Card: readiness (readiness score e anelli), longevity (indice longevità), hrvRhr (HRV e FC riposo vs baseline), sleep (architettura sonno e debito), ans (stress intraday vs Body Battery), pmc (CTL/ATL/TSB/ACWR), ef (efficienza aerobica e decoupling), zones (distribuzione zone 80/20), race (previsioni gara e VO2max), runs (ultime corse), hybrid (interferenza corsa/pesi), volume (volume e tonnellaggio forza).
+Card: readiness (readiness score e anelli), longevity (indice longevità), hrvRhr (HRV e FC riposo vs baseline), sleep (architettura sonno e debito), ans (stress intraday vs Body Battery), pmc (CTL/ATL/TSB/ACWR), ef (efficienza aerobica e decoupling), zones (distribuzione zone 80/20), race (previsioni gara e VO2max), runs (ultime corse), hybrid (interferenza corsa/pesi), volume (volume e tonnellaggio forza), planOverview (andamento piano mezza sub-2), planWeek (sessioni di questa settimana), planGates (controlli A/B/C), illnessNow (segnali di malessere oggi), illnessTimeline (storico malesseri), illnessPatterns (trigger dei malesseri).
 Rispondi SOLO con un oggetto JSON con esattamente queste chiavi: ${INSIGHT_KEYS.join(', ')}.\n\nDATI:\n${ctx}`;
   if (task === 'chat') {
     const history = (extra.history ?? []).slice(-8).map((m) => `${m.role === 'user' ? 'UTENTE' : 'BIO-OS'}: ${m.text}`).join('\n');

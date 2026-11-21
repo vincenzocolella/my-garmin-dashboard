@@ -1,7 +1,7 @@
 import { Activity, BatteryCharging, BrainCircuit, HeartPulse, Moon, ShieldPlus } from 'lucide-react';
 import { C, RingGauge, TimeChart } from '../components/charts/Charts';
 import { AIBox, Card, Kpi, Legend, TONE } from '../components/ui';
-import { bioAuditText } from '../lib/insights';
+import { bioAuditText, sleepCoachText } from '../lib/insights';
 import { fmt, fmtHours, isNum, signed } from '../lib/util';
 
 const STRESS_COLOR = (v) => (v <= 25 ? '#3B82F6' : v <= 50 ? '#F59E0B99' : v <= 75 ? C.amber : C.crimson);
@@ -100,6 +100,12 @@ function SleepCard({ a }) {
         refLines={[{ y: s.need, color: C.violet, label: `bisogno ${s.need} h` }]}
         tooltipExtra={(row) => <div className="mt-1 text-[10px] text-gray-500">Totale {fmt(row.total, 1)} h · efficienza {fmt(row.efficiency, 1)}%</div>} />
       <Legend items={[{ label: 'Profondo', color: '#4F46E5' }, { label: 'REM', color: C.cyan }, { label: 'Leggero', color: '#1D4ED8' }, { label: 'Veglia', color: C.amber }, { label: 'Score', color: C.emerald }]} />
+      <div className="mt-4 grid grid-cols-2 gap-4 border-t border-edge pt-3 sm:grid-cols-4">
+        <Kpi label="A letto (media 14gg)" value={s.bedtimeAvg ?? '—'} sub={isNum(s.bedtimeSdMin) ? `± ${s.bedtimeSdMin} min` : undefined} tone={(s.bedtimeSdMin ?? 0) > 45 ? 'warn' : undefined} />
+        <Kpi label="Sveglia (media)" value={s.wakeAvg ?? '—'} sub={isNum(s.wakeSdMin) ? `± ${s.wakeSdMin} min` : undefined} tone={(s.wakeSdMin ?? 0) > 45 ? 'warn' : undefined} />
+        <Kpi label="Sonno ↔ HRV" value={isNum(s.sleepHrvCorr) ? `r ${fmt(s.sleepHrvCorr, 2)}` : '—'} sub={isNum(s.hrvPerHour) && (s.sleepHrvCorr ?? 0) >= 0.3 ? `+${fmt(s.hrvPerHour, 1)} ms HRV / ora` : 'legame debole'} />
+        <Kpi label="Notti < 6 h (14gg)" value={s.shortNights14} tone={s.shortNights14 >= 3 ? 'warn' : undefined} />
+      </div>
     </Card>
   );
 }
@@ -141,7 +147,7 @@ function AnsCard({ a }) {
 
 function DailyAnsCard({ a }) {
   return (
-    <Card title="Ricarica vs Consumo" subtitle="Body Battery caricata / consumata e stress medio giornaliero" icon={BatteryCharging}>
+    <Card title="Ricarica vs Consumo" subtitle="Body Battery caricata / consumata e stress medio giornaliero" icon={BatteryCharging} info="dailyAns" className="lg:col-span-3">
       <TimeChart rows={a.ans.daily} height={230} left={{ label: 'BB' }} right={{ min: 0, max: 100, label: 'stress' }}
         series={[
           { key: 'bbCharged', label: 'BB caricata', type: 'bar', color: C.emerald, opacity: 0.7 },
@@ -159,8 +165,9 @@ export function HealthTab({ a }) {
       <ReadinessCard a={a} />
       <HrvCard a={a} />
       <SleepCard a={a} />
-      <AIBox title="AI Bio-Audit" icon={Activity} task="bioAudit" heuristic={bioAuditText} />
+      <AIBox title="AI Sleep Coach" icon={Moon} task="sleep" heuristic={sleepCoachText} info="sleepCoach" />
       <AnsCard a={a} />
+      <AIBox title="AI Bio-Audit" icon={Activity} task="bioAudit" heuristic={bioAuditText} />
       <DailyAnsCard a={a} />
     </div>
   );

@@ -1,5 +1,6 @@
 import { Component, createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { Cpu, Loader2, RotateCcw, Sparkles } from 'lucide-react';
+import { Cpu, Info, Loader2, RotateCcw, Sparkles, X } from 'lucide-react';
+import { INFO } from '../lib/info';
 import { aiAvailable, callAI, cleanText, parseJson, systemFor, taskPrompt } from '../lib/ai';
 import { cardInsights, PERSONAS } from '../lib/insights';
 
@@ -53,8 +54,31 @@ export function AIProvider({ settings, analytics, backendStatus, children }) {
 export const useAI = () => useContext(AICtx);
 
 // --------------------------------------------------------------------- primitives
-export function Card({ title, subtitle, icon: Icon, insightKey, actions, children, className = '' }) {
+export function InfoPanel({ entry, onClose }) {
+  if (!entry) return null;
+  return (
+    <div className="relative mb-4 rounded-lg border border-cyan/30 bg-void/80 p-3 pr-8 text-xs leading-relaxed text-gray-300">
+      <button type="button" onClick={onClose} className="absolute right-2 top-2 text-gray-500 hover:text-white" aria-label="Chiudi"><X size={14} /></button>
+      {entry.what && <p className="mb-1.5"><b className="text-cyan">Cos’è · </b>{entry.what}</p>}
+      {entry.how && <p className="mb-1.5"><b className="text-cyan">Come si calcola · </b>{entry.how}</p>}
+      {entry.read && <p><b className="text-cyan">Come leggerlo · </b>{entry.read}</p>}
+    </div>
+  );
+}
+
+export function InfoButton({ open, onClick }) {
+  return (
+    <button type="button" onClick={onClick} title="Cos’è questa metrica?" aria-label="Informazioni sulla metrica"
+      className={`rounded-md border p-1 transition ${open ? 'border-cyan/60 bg-cyan/10 text-cyan' : 'border-edge text-gray-500 hover:border-cyan/50 hover:text-cyan'}`}>
+      <Info size={13} />
+    </button>
+  );
+}
+
+export function Card({ title, subtitle, icon: Icon, insightKey, info, actions, children, className = '' }) {
   const ai = useAI();
+  const [showInfo, setShowInfo] = useState(false);
+  const infoEntry = INFO[info ?? insightKey];
   const h = insightKey ? ai.heuristics[insightKey] : null;
   const aiText = insightKey ? ai.aiInsights?.[insightKey] : null;
   return (
@@ -69,9 +93,11 @@ export function Card({ title, subtitle, icon: Icon, insightKey, actions, childre
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {actions}
-          {insightKey && <AIBadge />}
+          {insightKey && ai.heuristics[insightKey] && <AIBadge />}
+          {infoEntry && <InfoButton open={showInfo} onClick={() => setShowInfo((v) => !v)} />}
         </div>
       </header>
+      {showInfo && <InfoPanel entry={infoEntry} onClose={() => setShowInfo(false)} />}
       {insightKey && h && <InsightLine text={typeof aiText === 'string' ? aiText : h.text} tone={h.tone} ai={typeof aiText === 'string'} />}
       {children}
     </section>
@@ -153,8 +179,9 @@ export function Button({ children, onClick, disabled, variant = 'ghost', classNa
  * Long-form analysis box. Shows the heuristic engine's output immediately; "Genera con AI"
  * replaces it with the configured provider's answer for the current persona.
  */
-export function AIBox({ title, icon: Icon = Sparkles, task, heuristic, extra, className = '', compact }) {
+export function AIBox({ title, icon: Icon = Sparkles, task, heuristic, extra, className = '', compact, info }) {
   const ai = useAI();
+  const [showInfo, setShowInfo] = useState(false);
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -192,8 +219,10 @@ export function AIBox({ title, icon: Icon = Sparkles, task, heuristic, extra, cl
             {loading ? <Loader2 size={12} className="animate-spin" /> : result ? <RotateCcw size={12} /> : <Sparkles size={12} />}
             {loading ? 'Analisi…' : result ? 'Rigenera' : 'Genera con AI'}
           </Button>
+          {info && INFO[info] && <InfoButton open={showInfo} onClick={() => setShowInfo((v) => !v)} />}
         </div>
       </header>
+      {showInfo && <InfoPanel entry={INFO[info]} onClose={() => setShowInfo(false)} />}
       {error && <p className="mb-2 text-xs text-crimson">{error}</p>}
       <div className={`scrollbar-thin overflow-y-auto whitespace-pre-wrap text-[13px] leading-relaxed text-gray-300 ${compact ? 'max-h-72' : 'max-h-[28rem]'}`}>
         {result ?? heuristicText}

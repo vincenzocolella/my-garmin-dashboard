@@ -1,5 +1,6 @@
 // Heuristic engine: deterministic diagnostics computed from the analytics object.
 // Used when no AI provider is configured, and as instant "first draft" before an AI call.
+import { PLAN_START, RACE_DATE } from './planData';
 import { clamp, diffDays, fmt, fmtDuration, fmtPace, isNum, mean, round, signed } from './util';
 
 export const PERSONAS = {
@@ -19,6 +20,11 @@ export function hrZones(a) {
 }
 
 export function trainingPaces(a) {
+  // while the half-marathon plan is running, its paces (calibrated on the 10 km test) win over the VO2max model
+  if (a.plan && a.today >= PLAN_START && a.today <= RACE_DATE) {
+    const race = Number(a.plan.goalPace.split(':')[0]) * 60 + Number(a.plan.goalPace.split(':')[1]);
+    return { easy: [390, 430], threshold: 328, tenK: 298, long: 410, race };
+  }
   const p10 = a.race.predictions.find((p) => p.key === '10k')?.pace;
   const pHalf = a.race.predictions.find((p) => p.key === 'half')?.pace;
   if (!isNum(p10)) return null;
@@ -131,7 +137,7 @@ export function cardInsights(a) {
   const out = {};
   out.readiness = {
     text: `Readiness ${fmt(r.score)} (${signed(r.delta)} vs media 30gg).${weakest ? ` Anello più debole: ${weakest[0]} (${weakest[1]}).` : ''}`,
-    tone: (r.score ?? 50) >= 65 ? 'good' : (r.score ?? 50) >= 45 ? 'warn' : 'bad',
+    tone: (r.score ?? 80) >= 80 ? 'good' : (r.score ?? 80) >= 65 ? 'warn' : 'bad',
   };
   out.hrvRhr =
     a.hrvTrend.consecutiveBelow >= 3
@@ -182,7 +188,7 @@ export function cardInsights(a) {
     text: `${a.totals.runs} corse · ${fmt(a.totals.km, 1)} km nel periodo.${a.zones.easyTooHard ? ` ${a.zones.easyTooHard} facili con troppo tempo in Z3+.` : ''}`,
     tone: a.zones.easyTooHard ? 'warn' : 'info',
   };
-  return out;
+  return { ...out, ...extraCardInsights(a) };
 }
 
 // --------------------------------------------------------------------- persona rendering
@@ -206,7 +212,7 @@ const openers = {
 };
 
 export function nextSession(a) {
-  const r = a.readiness.score ?? 50;
+  const r = a.readiness.score ?? 80;
   const risk = overtrainingRisk(a);
   const tsb = a.pmc.latest?.tsb ?? 0;
   const z = hrZones(a);
@@ -216,10 +222,18 @@ export function nextSession(a) {
   const lastLeg = lastOf(a, (x) => x.kind === 'strength' && ['Lower', 'Full Body'].includes(x.strength?.focus));
   const since = (x) => (x ? diffDays(a.today, x.date) : 99);
   const easy = paces ? `${fmtPace(paces.easy[0])}-${fmtPace(paces.easy[1])}/km` : `FC < ${z.z2Top} bpm`;
-  if (r < 40 || risk >= 60) return { title: 'Riposo o mobilità 20-30’', why: `readiness ${r}, rischio overtraining ${risk}/100`, kind: 'rest' };
-  if (r < 55 || tsb < -20) return { title: `Easy run 40-50’ in Z2 (${easy}, FC < ${z.z2Top})`, why: `readiness ${r}, TSB ${fmt(tsb, 1)}`, kind: 'easy' };
+  if (r < 50 || risk >= 60 || a.illness?.current?.active) return { title: 'Riposo o mobilità 20-30’', why: a.illness?.current?.active ? 'segnali di malessere in corso' : `readiness ${r}, rischio overtraining ${risk}/100`, kind: 'rest' };
+  if (r < 68 || tsb < -20) return { title: `Easy run 40-50’ in Z2 (${easy}, FC < ${z.z2Top})`, why: `readiness ${r}, TSB ${fmt(tsb, 1)}`, kind: 'easy' };
   if (since(lastLeg) <= 1) return { title: `Easy run 45’ (${easy}) oppure forza upper body`, why: `leg day ${since(lastLeg) === 0 ? 'oggi' : 'ieri'}: niente qualità per 48 h`, kind: 'easy' };
-  if (since(lastHard) >= 3 && r >= 62)
+  // while the half-marathon plan runs, the next session is the plan's, not a generic one
+  if (a.plan && a.today >= PLAN_START && a.today <= RACE_DATE) {
+    const key = a.plan.current.sessions.find((x) => !x.optional);
+    const opt = a.plan.current.sessions.find((x) => x.optional);
+    if (key?.state === 'todo') return { title: `${key.title} · ${key.targetKm} km (${key.pace ?? ''}, FC ${key.hr ?? '—'})`, why: `uscita chiave della settimana ${a.plan.weekNo}, idealmente ${a.plan.habits.longDayName}`, kind: 'plan' };
+    if (opt?.state === 'todo' && a.plan.optionalAdvice?.verdict === 'do') return { title: `${opt.title} · ${opt.targetKm} km (${opt.pace ?? ''})`, why: 'seconda uscita consigliata questa settimana', kind: 'plan' };
+    return { title: 'Riposo, oppure corsa libera facile ≤ 45’ in Z2', why: `le sessioni del piano della settimana ${a.plan.weekNo} sono coperte`, kind: 'easy' };
+  }
+  if (since(lastHard) >= 3 && r >= 75)
     return { title: paces ? `Qualità: 5×1000 m a ${fmtPace(paces.tenK)}/km, rec 2’ jog` : `Qualità: 5×4’ in Z4 (${z.z3Top}-${z.threshold} bpm), rec 2’`, why: `ultima seduta dura ${since(lastHard)} giorni fa, readiness ${r}`, kind: 'quality' };
   if (since(lastLong) >= 6) {
     const longest = Math.max(0, ...a.activities.filter((x) => x.kind === 'run' && diffDays(a.today, x.date) < 28).map((x) => x.distance / 1000));
@@ -310,7 +324,7 @@ export function chatAnswer(a, question) {
     const km = kmMatch ? parseFloat(kmMatch[1].replace(',', '.')) : null;
     const longest = Math.max(0, ...a.activities.filter((x) => x.kind === 'run' && diffDays(a.today, x.date) < 28).map((x) => x.distance / 1000));
     if (km && longest && km > longest * 1.15) issues.push(`${km} km è +${Math.round((km / longest - 1) * 100)}% rispetto al lungo più lungo delle ultime 4 settimane (${fmt(longest, 1)} km)`);
-    const verdict = issues.length >= 3 || (r.score ?? 50) < 40 ? 'No' : issues.length ? 'Sì, con condizioni' : 'Sì';
+    const verdict = issues.length >= 3 || (r.score ?? 80) < 50 || a.illness?.current?.active ? 'No' : issues.length ? 'Sì, con condizioni' : 'Sì';
     return [
       `${verdict}.`,
       issues.length ? `Fattori limitanti: ${issues.join('; ')}.` : `Readiness ${fmt(r.score)}, TSB ${fmt(a.pmc.latest?.tsb, 1)}, sonno medio ${fmt(a.sleep.avg7, 1)} h: semaforo verde.`,
@@ -325,4 +339,122 @@ export function chatAnswer(a, question) {
     return a.race.predictions.map((p) => `${p.label}: ${fmtDuration(p.model)} (${fmtPace(p.pace)}/km)${p.garmin ? ` · Garmin ${fmtDuration(p.garmin)}` : ''}`).join('\n') + `\nBasato su ${a.race.vdotSource}${isNum(a.race.vo2max) ? ` ${fmt(a.race.vo2max, 1)}` : ''} e ${fmt(a.race.weeklyKm, 1)} km/sett.`;
   if (/hrv|stress|recuper|stanc|riposo|battery/.test(q)) return bioAuditText(a, 'quant');
   return `${judgeText(a, 'quant')}\n\n(motore euristico: per domande libere configura Gemini/OpenAI nelle impostazioni)`;
+}
+
+// --------------------------------------------------------------------- sleep coach
+export function sleepCoachText(a, persona) {
+  const s = a.sleep;
+  const ln = s.lastNight;
+  const lines = [openers[persona](a, (s.debt7 ?? 0) >= 6 ? 3 : (s.debt7 ?? 0) >= 3 ? 2 : 0), ''];
+  lines.push('ARCHITETTURA');
+  if (ln) lines.push(`• Stanotte ${fmt(ln.hours, 1)} h, score ${fmt(ln.score)}: profondo ${fmt((ln.deep / ln.total) * 100, 0)}%, REM ${fmt((ln.rem / ln.total) * 100, 0)}%, veglia ${fmt((ln.awake ?? 0) / 60, 0)} min.`);
+  lines.push(`• Media 7 notti: ${fmt(s.avg7, 1)} h, efficienza ${fmt(s.efficiency7, 1)}%, profondo ${fmt(s.deepPct7, 0)}% (ottimale 15-25%), REM ${fmt(s.remPct7, 0)}% (ottimale 20-25%).`);
+  lines.push('', 'REGOLARITÀ');
+  lines.push(`• A letto in media alle ${s.bedtimeAvg ?? '—'} (± ${fmt(s.bedtimeSdMin)} min), sveglia alle ${s.wakeAvg ?? '—'} (± ${fmt(s.wakeSdMin)} min).${(s.bedtimeSdMin ?? 0) > 45 ? persona === 'sergeant' ? ' Orari da studente fuori sede: il tuo orologio biologico non sa più che fuso orario è.' : ' Variabilità oltre 45’: il ritmo circadiano ne risente più della durata stessa.' : ' Regolarità buona.'}`);
+  if (s.shortNights14) lines.push(`• ${s.shortNights14} notti sotto le 6 h nelle ultime 2 settimane.`);
+  lines.push('', 'LEGAME SONNO → RECUPERO');
+  if (isNum(s.sleepHrvCorr)) {
+    const strong = Math.abs(s.sleepHrvCorr) >= 0.3;
+    lines.push(`• Correlazione ore di sonno / HRV notturno nel periodo: r = ${fmt(s.sleepHrvCorr, 2)}${strong && (s.hrvPerHour ?? 0) > 0 ? `: ogni ora di sonno in più vale circa +${fmt(s.hrvPerHour, 1)} ms di HRV.` : strong ? '.' : ': legame debole, il tuo HRV dipende più da carico e stress che dalla durata.'}`);
+  } else lines.push('• Servono almeno 7 notti con HRV per stimare il legame.');
+  const late = a.activities.filter((x) => diffDays(a.today, x.date) < 14 && x.hard && Number((x.start ?? '').slice(11, 13)) >= 19);
+  if (late.length) lines.push(`• ${late.length} sedute dure dopo le 19:00 nelle ultime 2 settimane: alzano FC e temperatura notturne e tagliano il sonno profondo.`);
+  const evening = a.ans.intraday?.windows.find((w) => w.label.startsWith('Stress serale'));
+  if (evening) lines.push(`• Oggi stress serale elevato (${evening.label}): attivazione che ritarda l’addormentamento.`);
+  if ((a.ans.intraday?.nightStress ?? 0) > 22) lines.push(`• Stress medio notturno ${fmt(a.ans.intraday.nightStress)}: il sistema nervoso non è sceso in modalità recupero.`);
+  const wakeH = s.wakeAvg ? Number(s.wakeAvg.slice(0, 2)) + Number(s.wakeAvg.slice(3)) / 60 : 7;
+  const bed = wakeH - s.need - 0.25;
+  const bedClock = `${String(Math.floor((bed + 24) % 24)).padStart(2, '0')}:${String(Math.round(((bed % 1) + 1) % 1 * 60) % 60).padStart(2, '0')}`;
+  lines.push('', 'PRESCRIZIONI');
+  lines.push(`• A letto entro le ${bedClock} per coprire ${s.need} h con la tua sveglia media${(s.debt7 ?? 0) >= 3 ? `; per 4 notti anticipa di altri 30’ per ripagare ${fmt(s.debt7, 1)} h di debito` : ''}.`);
+  lines.push('• Stessa sveglia anche nel weekend (± 30’), luce naturale entro 30’ dal risveglio.');
+  lines.push('• Caffeina entro le 14:00, alcol zero nelle 3 h prima di dormire, camera 18-19 °C e buio totale.');
+  if ((s.deepPct7 ?? 20) < 15 || late.length) lines.push('• Sedute intense entro le 19:00; dopo, solo mobilità o upper body leggero.');
+  if ((s.efficiency7 ?? 100) < 88) lines.push('• Se non dormi dopo 20’ alzati, luce bassa, torna a letto solo con sonno.');
+  return lines.join('\n');
+}
+
+// --------------------------------------------------------------------- wellness / illness
+export function illnessText(a, persona) {
+  const il = a.illness;
+  const st = il.stats;
+  const lines = [openers[persona](a, il.current.active ? 3 : st.count ? 1 : 0), ''];
+  lines.push('STATO ATTUALE');
+  if (il.current.active) {
+    const e = il.current.episode;
+    lines.push(`• Segnali attivi${e ? ` da ${e.days} giorni (${e.label.toLowerCase()}, confidenza ${e.confidence}%)` : ' negli ultimi giorni'}: ${(il.current.today?.signals ?? []).join(', ') || 'deviazioni autonomiche'}.`);
+    lines.push(persona === 'sergeant' ? '• Oggi l’unico allenamento autorizzato è dormire. Se ti vedo con le ripetute ti radio io.' : '• Niente intensità finché FC a riposo e HRV non tornano in baseline per 2 giorni consecutivi.');
+  } else lines.push(`• Nessun segnale attivo: ${st.healthyStreak} giorni consecutivi nella norma.`);
+  lines.push('', `STORICO (${st.daysScanned} giorni analizzati)`);
+  if (!il.episodes.length) lines.push('• Nessun episodio rilevato con la sensibilità attuale.');
+  else {
+    const byType = {};
+    il.episodes.forEach((e) => (byType[e.label] = (byType[e.label] ?? 0) + 1));
+    lines.push(`• ${st.count} episodi: ${Object.entries(byType).map(([k, v]) => `${v} × ${k.toLowerCase()}`).join(', ')}. Durata media ${fmt(st.avgDays, 1)} giorni, rientro in baseline in ${fmt(st.avgRecovery, 1)} giorni.`);
+    il.episodes.slice(0, 3).forEach((e) => lines.push(`• ${e.start.slice(8)}/${e.start.slice(5, 7)}–${e.end.slice(8)}/${e.end.slice(5, 7)}: ${e.label.toLowerCase()} · FC riposo ${signed(e.markers.rhr, 1)} bpm, HRV ${signed(e.markers.hrv)}%${e.hardDuring.length ? ` · ${e.hardDuring.length} ${e.hardDuring.length === 1 ? 'seduta dura' : 'sedute dure'} durante l’episodio` : ''}.`));
+  }
+  lines.push('', 'PATTERN');
+  if (st.afterHighLoad) lines.push(`• ${st.afterHighLoad}/${st.count} episodi preceduti da un carico settimanale ≥ 1,3× il normale: il tuo punto di rottura è il picco di volume, non il volume in sé.`);
+  if (st.afterShortSleep) lines.push(`• ${st.afterShortSleep}/${st.count} episodi preceduti da notti più corte della tua media: il sonno è la tua prima linea di difesa.`);
+  if (st.trainedHard) lines.push(`• In ${st.trainedHard} ${st.trainedHard === 1 ? 'episodio' : 'episodi'} hai continuato con sedute dure: allunga i tempi di recupero.`);
+  if (!st.afterHighLoad && !st.afterShortSleep && st.count) lines.push('• Nessun trigger dominante tra carico e sonno: guarda a fattori esterni (stress lavorativo, viaggi, stagionalità).');
+  if (!st.count) lines.push('• Dati insufficienti per un pattern.');
+  lines.push('', 'PROTOCOLLO');
+  lines.push('• Sintomi sopra il collo (naso, gola) e niente febbre: solo Z1-Z2 ≤ 40’. Sotto il collo (petto, febbre, dolori): riposo completo.');
+  lines.push('• Rientro: 2 giorni di FC a riposo e HRV in baseline → 2-3 uscite facili → poi la qualità.');
+  lines.push('• Analisi statistica su dati dell’orologio, non una diagnosi: con febbre, dolore toracico o sintomi persistenti consulta un medico.');
+  return lines.join('\n');
+}
+
+// --------------------------------------------------------------------- half-marathon plan coach
+export function planCoachText(a, persona) {
+  const p = a.plan;
+  const w = p.current;
+  const key = w.sessions.find((s) => !s.optional);
+  const opt = w.sessions.find((s) => s.optional);
+  const prevWeek = p.weeks.find((x) => x.week === w.week - 1);
+  const prevKey = prevWeek?.sessions.find((s) => !s.optional);
+  const lines = [openers[persona](a, p.consecutiveMissed >= 2 || a.illness.current.active ? 3 : p.consecutiveMissed ? 2 : 0), ''];
+  lines.push(`SETTIMANA ${w.week}/${p.totalWeeks} · ${w.phaseTitle}${w.tag ? ` · ${w.tag}` : ''} · obiettivo ${p.goal} (${p.goalPace}/km sul Garmin)`);
+  if (key) {
+    lines.push(`• Chiave: ${key.title} (${key.targetKm} km, ${key.pace ?? ''}, FC ${key.hr ?? '—'}) → ${key.state === 'done' ? 'FATTA ✓' : key.state === 'partial' ? 'fatta in parte' : `da fare, idealmente ${p.habits.longDayName}`}.`);
+    (key.compliance?.notes ?? []).forEach((n) => lines.push(`  ${n.tone === 'good' ? '✓' : '•'} ${n.text}`));
+  }
+  if (opt) lines.push(`• Facoltativa: ${opt.title}. ${p.optionalAdvice?.text ?? (opt.state === 'done' ? 'Fatta ✓' : '')}`);
+  if (prevKey) lines.push(`• Settimana scorsa: ${prevKey.title} → ${{ done: 'fatta ✓', partial: 'fatta in parte', missed: 'saltata ✗' }[prevKey.state] ?? prevKey.state}.${prevKey.compliance?.notes?.filter((n) => n.tone === 'warn').map((n) => ` ${n.text}.`).join('') ?? ''}`);
+  lines.push('', 'REGOLE DEL PIANO APPLICATE AI TUOI DATI');
+  if (p.consecutiveMissed >= 2) lines.push(`• ${p.consecutiveMissed} uscite chiave saltate di fila: l’obiettivo scende a ${p.goal}. Ripeti la settimana prima di andare avanti.`);
+  else if (p.consecutiveMissed === 1) lines.push('• Hai saltato l’ultima uscita chiave: ripeti quella settimana invece di saltare avanti.');
+  if (a.illness.current.active) lines.push('• Segnali di malessere in corso: rimanda la chiave di 2-3 giorni, il piano assorbe lo spostamento.');
+  if (p.rhrAlarm) lines.push('• FC a riposo +5 bpm per 3 giorni: alleggerisci questa settimana (regola del piano).');
+  if (p.habits.legClash.length) lines.push(`• I tuoi leg day di ${p.habits.legClash.join(' e ')} cadono nelle 48 h prima del lungo di ${p.habits.longDayName}: spostali a lunedì-mercoledì.`);
+  else lines.push('• Pesi: nessun leg day nelle 48 h prima del lungo. Perfetto.');
+  if (p.gelsActive && key?.targetKm >= 14) lines.push('• Gel ai minuti 30, 60 e 90, stesso prodotto della gara.');
+  const next = p.gates.find((g) => !g.grade && (g.week ?? 99) >= w.week);
+  if (next) lines.push(`• Prossimo controllo: settimana ${next.week} (${next.when}). A se ${next.a}.`);
+  const graded = p.gates.filter((g) => g.grade);
+  if (graded.length) lines.push(`• Controlli: ${graded.map((g) => `sett. ${g.week} → ${g.grade}`).join(', ')}.`);
+  if (Math.abs(a.profile.restHr - 57) >= 3 || Math.abs(a.profile.maxHr - 195) >= 4)
+    lines.push(`• Le zone del piano assumono FC max 195 e riposo 57; Garmin dice FC max ${a.profile.maxHr} (${a.profile.maxHrSource}) e riposo ${a.profile.restHr}: usa i ritmi come guida e la FC solo come controllo.`);
+  lines.push('', persona === 'sergeant' ? `ORDINE: ${nextSession(a).title}. Il sub-2 non arriva per grazia ricevuta.` : `Oggi: ${nextSession(a).title} (${nextSession(a).why}).`);
+  return lines.join('\n');
+}
+
+export function extraCardInsights(a) {
+  const p = a.plan;
+  const il = a.illness;
+  const key = p.current.sessions.find((s) => !s.optional);
+  return {
+    planOverview: { text: `Settimana ${p.weekNo}/${p.totalWeeks} · obiettivo ${p.goal} a ${p.goalPace}/km · aderenza chiavi ${fmt(p.adherence)}% (${p.keyDone} fatte, ${p.keyMissed} saltate).`, tone: p.consecutiveMissed >= 2 ? 'bad' : p.consecutiveMissed ? 'warn' : 'good' },
+    planWeek: key ? { text: `${key.title}: ${key.state === 'done' ? 'fatta ✓' : key.state === 'partial' ? 'fatta in parte' : 'da fare'}. ${p.optionalAdvice ? p.optionalAdvice.text : ''}`, tone: key.state === 'done' ? 'good' : 'info' } : { text: 'Nessuna uscita in programma.', tone: 'info' },
+    planGates: (() => {
+      const g = [...p.gates].reverse().find((x) => x.grade);
+      return g ? { text: `Ultimo controllo (sett. ${g.week}): ${g.grade}. ${g.detail}.`, tone: g.grade === 'A' ? 'good' : g.grade === 'B' ? 'warn' : 'bad' } : { text: 'Nessun controllo ancora eseguito: il primo è in settimana 9.', tone: 'info' };
+    })(),
+    illnessNow: il.current.active
+      ? { text: `Segnali attivi: ${(il.current.today?.signals ?? []).join(', ') || 'deviazione autonomica'}. Niente intensità oggi.`, tone: 'bad' }
+      : { text: `Nessun segnale attivo · ${il.stats.healthyStreak} giorni consecutivi nella norma.`, tone: 'good' },
+    illnessTimeline: { text: `${il.stats.count} episodi in ${il.stats.daysScanned} giorni analizzati${il.stats.illness ? `, di cui ${il.stats.illness} compatibili con malattia` : ''}.`, tone: il.stats.illness ? 'warn' : 'info' },
+    illnessPatterns: { text: il.stats.count ? `Trigger: ${il.stats.afterHighLoad} dopo picchi di carico, ${il.stats.afterShortSleep} dopo notti corte; rientro medio ${fmt(il.stats.avgRecovery, 1)} giorni.` : 'Nessun episodio: nessun pattern da analizzare.', tone: 'info' },
+  };
 }

@@ -1,4 +1,5 @@
 import { addDays, clamp, localToday, rng, round, toDate } from './util';
+import { parseBlock, PLAN_WEEKS } from './plan';
 
 export const SCENARIOS = {
   balanced: { label: 'Bilanciato', desc: 'Blocco di costruzione progressivo, recupero adeguato.' },
@@ -35,8 +36,26 @@ const localEpoch = (iso, h, m) => {
   return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), h, m); // Garmin "local" timestamps: wall clock as UTC
 };
 
+/** 1 km auto-laps [[m, s, bpm]] with cardiac drift and an optional fast block at the end. */
+function makeLaps(r, km, pace, hr, { block, drift = 3 } = {}) {
+  const laps = [];
+  const full = Math.floor(km);
+  const total = Math.ceil(km - 0.05);
+  for (let i = 0; i < total; i++) {
+    const dist = i < full ? 1000 : Math.round((km - full) * 1000);
+    if (dist < 60) continue;
+    const inBlock = block && i >= total - Math.ceil(block.km);
+    const p = (inBlock ? block.pace : pace) + r.normal(0, 4);
+    const h = (inBlock ? block.hr + (i - (total - block.km)) * 0.8 : hr) + (drift / 100) * hr * (i / Math.max(1, km)) * 1.4 + r.normal(0, 1.2);
+    laps.push([dist, round((dist / 1000) * p, 1), Math.round(h)]);
+  }
+  return laps;
+}
+
+const PLAN_KIND = { 'Long Run': 'long', Tempo: 'tempo', Speed: 'intervals', Easy: 'easy', Race: 'long' };
+
 function makeRun(kind, ctx) {
-  const { r, date, p, scenario, progress, volume, id } = ctx;
+  const { r, date, p, scenario, progress, volume, id, planned } = ctx;
   const ot = scenario === 'overtraining' ? p : 0;
   const sleepy = scenario === 'sleep_deprivation' ? p : 0;
   const easyPace = 352 - progress * 18 + ot * 6 + sleepy * 8; // aerobic improvement over the block
@@ -47,10 +66,16 @@ function makeRun(kind, ctx) {
     long: { km: Math.min(20, 14 + progress * 5), pace: easyPace + 14, hr: 144 + ot * 7, zones: [8, 62 - ot * 20, 26 + ot * 18, 4, 0], te: [3.5, 0.5], dec: 4.8 + ot * 4 },
   }[kind];
   const scale = kind === 'easy' || kind === 'long' ? volume : Math.sqrt(volume); // quality sessions grow less than volume
-  const km = Math.max(4, spec.km * scale * (0.92 + r() * 0.16));
-  const pace = spec.pace + r.normal(0, 5);
-  const duration = km * pace;
-  const avgHr = Math.round(spec.hr + r.normal(0, 2.5));
+  const km = planned ? planned.targetKm * (0.98 + r() * 0.05) : Math.max(4, spec.km * scale * (0.92 + r() * 0.16));
+  const basePace = spec.pace + r.normal(0, 5);
+  const plannedBlock = planned ? parseBlock(planned) : null;
+  const block = plannedBlock
+    ? { km: Math.min(km - 1, plannedBlock.km), pace: (plannedBlock.pace ?? 300) + ot * 7 + sleepy * 6 + r.normal(0, 3), hr: 168 + ot * 9 + sleepy * 6 + (plannedBlock.km >= 10 ? 2 : 0) }
+    : null;
+  const laps = makeLaps(r, km, planned ? Math.max(basePace, planned.type === 'Easy' ? 415 : 405) : basePace, spec.hr + r.normal(0, 2), { block, drift: spec.dec ?? 2 });
+  const duration = laps.reduce((t, l) => t + l[1], 0);
+  const pace = duration / km;
+  const avgHr = Math.round(laps.reduce((t, l) => t + l[2] * l[1], 0) / duration);
   const zTot = spec.zones.reduce((a, b) => a + b, 0);
   return {
     id,
@@ -58,7 +83,7 @@ function makeRun(kind, ctx) {
     start: `${date} ${r() > 0.5 ? '07:05:00' : '18:40:00'}`,
     type: kind === 'easy' && r() > 0.85 ? 'treadmill_running' : 'running',
     kind: 'run',
-    name: { easy: 'Corsa facile', tempo: 'Tempo run', intervals: 'Ripetute 6x1000', long: 'Lungo' }[kind],
+    name: planned?.title ?? { easy: 'Corsa facile', tempo: 'Tempo run', intervals: 'Ripetute 6x1000', long: 'Lungo' }[kind],
     distance: Math.round(km * 1000),
     duration: Math.round(duration),
     avgHr,
@@ -75,6 +100,7 @@ function makeRun(kind, ctx) {
     zones: spec.zones.map((z) => Math.round((duration * z) / zTot)),
     rpe: null,
     decoupling: spec.dec == null ? null : round(Math.max(0.3, spec.dec + r.normal(0, 1)), 1),
+    laps,
     strength: null,
   };
 }
@@ -152,7 +178,14 @@ function makeIntraday(today, todayRow, prevRow, scenario, r) {
 const DAY_MS_LOCAL = 86400000;
 
 /** Realistic multi-scenario dataset in the same shape returned by GET /api/telemetry. */
-export function generateDemo(scenario = 'balanced', totalDays = 132) {
+/** Two injected episodes of being unwell (days ago → intensity) so the wellness scan has something to find. */
+function sickness(daysAgo) {
+  if (daysAgo >= 48 && daysAgo <= 53) return [0.5, 1, 1, 0.8, 0.5, 0.25][53 - daysAgo];
+  if (daysAgo >= 120 && daysAgo <= 122) return [0.7, 0.9, 0.5][122 - daysAgo];
+  return 0;
+}
+
+export function generateDemo(scenario = 'balanced', totalDays = 200) {
   const r = rng(seedOf(scenario) + 42);
   const today = localToday();
   const start = addDays(today, -(totalDays - 1));
@@ -182,18 +215,26 @@ export function generateDemo(scenario = 'balanced', totalDays = 132) {
     }
 
     // ----- workouts (today is left empty: the day isn't over yet)
+    const sick = sickness(daysAgo);
+    const planWeek = PLAN_WEEKS.find((w) => date >= w.start && date <= w.end);
     let load = 0;
-    if (daysAgo > 0 && !(r() < 0.07)) {
+    if (daysAgo > 0 && !(r() < 0.07) && sick < 0.6) {
       for (const w of plan[dow]) {
-        const ctx = { r, date, p, scenario, progress, volume, id: id++ };
+        // from the plan start, Sunday = key session of the plan, Thursday = optional quality (if any)
+        let planned = null;
+        let kind = w;
+        if (planWeek && dow === 6) planned = planWeek.runs.find((x) => !x.optional);
+        if (planWeek && dow === 3 && w === 'intervals') planned = planWeek.runs.find((x) => x.optional) ?? null;
+        if (planned) kind = PLAN_KIND[planned.type];
+        const ctx = { r, date, p, scenario, progress, volume, id: id++, planned };
         if (w.startsWith('strength:')) {
           activities.push(makeStrength(w.split(':')[1], ctx));
           load += TRIMP_EST.strength * (1 + p * 0.3);
         } else {
-          const run = makeRun(w, ctx);
+          const run = makeRun(kind, ctx);
           run.vo2max = Math.round(vo2);
           activities.push(run);
-          load += TRIMP_EST[w] * volume;
+          load += TRIMP_EST[kind] * volume;
         }
       }
     }
@@ -214,12 +255,12 @@ export function generateDemo(scenario = 'balanced', totalDays = 132) {
     const awake = (18 + r() * 25 + ot * 20 + sleepy * 10) * 60;
     const bedH = 23 + (r() * 0.9 - 0.3) + sleepy * 1.4;
     const startTs = localEpoch(addDays(date, -1), 0, 0) + bedH * 3600000;
-    const hrv = Math.round(clamp(57 + tsb * 0.28 - ot * 11 - sleepy * 10 + peak * 6 + r.normal(0, 3.6), 18, 120));
-    const rhr = Math.round(REST_HR + 1 - tsb * 0.07 + ot * 6 + sleepy * 5 - peak * 2 + r.normal(0, 1.1));
-    const stress = Math.round(clamp(27 + ot * 13 + sleepy * 16 - tsb * 0.15 + r.normal(0, 4), 8, 80));
-    const bbMax = Math.round(clamp(18 + sleepH * 8.6 - Math.max(0, -tsb) * 0.35 - stress * 0.12 + r.normal(0, 4), 15, 100));
+    const hrv = Math.round(clamp((57 + tsb * 0.28 - ot * 11 - sleepy * 10 + peak * 6 + r.normal(0, 3.6)) * (1 - 0.32 * sick), 18, 120));
+    const rhr = Math.round(REST_HR + 1 - tsb * 0.07 + ot * 6 + sleepy * 5 - peak * 2 + 8 * sick + r.normal(0, 1.1));
+    const stress = Math.round(clamp(27 + ot * 13 + sleepy * 16 - tsb * 0.15 + 17 * sick + r.normal(0, 4), 8, 80));
+    const bbMax = Math.round(clamp(18 + sleepH * 8.6 - Math.max(0, -tsb) * 0.35 - stress * 0.12 - 18 * sick + r.normal(0, 4), 15, 100));
     const bbMin = Math.round(clamp(bbMax - (32 + load * 0.22 + stress * 0.55 + r.normal(0, 5)), 5, bbMax - 5));
-    const score = Math.round(clamp(42 + (sleepH - 5) * 11 + (deepPct - 0.15) * 120 - awake / 600 + r.normal(0, 3), 20, 98));
+    const score = Math.round(clamp(42 + (sleepH - 5) * 11 + (deepPct - 0.15) * 120 - awake / 600 - 14 * sick + r.normal(0, 3), 20, 98));
 
     days.push({
       date,

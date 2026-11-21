@@ -17,6 +17,7 @@ export const DEFAULT_SETTINGS = {
   maxHr: '',
   restHr: '',
   sleepNeedH: 8,
+  illnessSensitivity: 'media',
 };
 
 function read(key, fallback) {

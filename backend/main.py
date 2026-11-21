@@ -4,6 +4,7 @@ Routes (all /api routes require `Authorization: Bearer $APP_TOKEN` when APP_TOKE
   GET  /health                      liveness, no auth
   GET  /api/status                  which features are configured
   GET  /api/telemetry?days=30       full biometric dataset (daily vitals, intraday, activities, profile)
+  GET  /api/days?start=&end=        daily vitals only (history backfill, <= 31 days)
   POST /api/ai                      {system, prompt, json} -> Gemini text
 """
 
@@ -43,7 +44,7 @@ ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "http://local
 CACHE_TTL_S = int(os.getenv("CACHE_TTL_S", "300"))
 TZ = ZoneInfo(os.getenv("TIMEZONE", "Europe/Rome"))  # Render runs in UTC; "today" must be the user's today
 WORKERS = int(os.getenv("GARMIN_WORKERS", "3"))
-MAX_DETAIL_FETCH = 15  # per-activity detail calls (splits / exercise sets) per request
+MAX_DETAIL_FETCH = 25  # per-activity detail calls (splits / exercise sets) per request
 
 log = logging.getLogger("bio-os")
 
@@ -231,9 +232,17 @@ def _activity_kind(type_key: str | None) -> str:
     return "other"
 
 
-def _decoupling(splits: dict | None) -> float | None:
+def _split_detail(splits: dict | None) -> dict:
+    """Compact laps [[m, s, bpm]] (used for plan checkpoints) + Pa:HR decoupling."""
+    laps = [l for l in (splits or {}).get("lapDTOs") or [] if l.get("duration") and l.get("distance")]
+    return {
+        "laps": [[round(l["distance"]), round(l["duration"], 1), round(l["averageHR"]) if l.get("averageHR") else None] for l in laps],
+        "decoupling": _decoupling([l for l in laps if l.get("averageHR")]),
+    }
+
+
+def _decoupling(laps: list[dict]) -> float | None:
     """Pa:HR decoupling between first and second half of the run, in %."""
-    laps = [l for l in (splits or {}).get("lapDTOs") or [] if l.get("duration") and l.get("averageHR") and l.get("distance")]
     total = sum(l["duration"] for l in laps)
     if len(laps) < 2 or total < 20 * 60:
         return None
@@ -304,6 +313,7 @@ def _activity(a: dict) -> dict:
         "zones": zones if any(z is not None for z in zones) else None,
         "rpe": (rpe / 10 if rpe and rpe > 10 else rpe),
         "decoupling": None,
+        "laps": None,
         "strength": {"sets": a.get("activeSets") or a.get("totalSets"), "reps": a.get("totalReps"),
                      "volumeKg": None, "focus": None} if type_key == "strength_training" else None,
     }
@@ -322,8 +332,9 @@ def load_activities(start: date, end: date) -> list[dict]:
 
     def enrich(a):
         if a["kind"] == "run":
-            a["decoupling"] = cached(f"decoupling:{a['id']}",
-                                     lambda: _decoupling(soft_call(lambda g: g.get_activity_splits(a["id"]))), 7 * 86400)
+            detail = cached(f"splits:{a['id']}",
+                            lambda: _split_detail(soft_call(lambda g: g.get_activity_splits(a["id"]))), 7 * 86400)
+            a.update(detail)
         else:
             detail = cached(f"sets:{a['id']}",
                             lambda: _strength_detail(soft_call(lambda g: g.get_activity_exercise_sets(a["id"]))), 7 * 86400)
@@ -365,17 +376,21 @@ def status():
 
 
 @app.get("/api/telemetry", dependencies=[Depends(require_token)])
-def telemetry(days: int = Query(30, ge=7, le=90), refresh: bool = False):
+def telemetry(days: int = Query(30, ge=7, le=180), refresh: bool = False, since: date | None = None):
+    """`since`: the browser already caches older days, so only days >= since (and always the last 2) are fetched."""
     today = today_local()
     if refresh:
         recent = tuple(f"day:{today - timedelta(i)}" for i in range(2))
         invalidate(recent + ("intraday:", "activities:", "profile:"))
 
     dates = [today - timedelta(i) for i in range(days - 1, -1, -1)]
+    if since:
+        dates = [d for d in dates if d >= since or (today - d).days <= 1]
     with ThreadPoolExecutor(WORKERS) as ex:
         day_rows = list(ex.map(load_day, dates))
-    # 42 extra days of activities so the chronic load (CTL) is warmed up at the start of the window
-    activities = load_activities(today - timedelta(days + 42), today)
+    # Activities for >= 180 days (one cheap call): the wellness scan needs training load around older episodes,
+    # +42 days so the chronic load (CTL) is warmed up at the start of the window.
+    activities = load_activities(today - timedelta(max(days, 180) + 42), today)
 
     return {
         "source": "garmin",
@@ -386,6 +401,17 @@ def telemetry(days: int = Query(30, ge=7, le=90), refresh: bool = False):
         "activities": activities,
         "profile": load_profile(today),
     }
+
+
+@app.get("/api/days", dependencies=[Depends(require_token)])
+def days_range(start: date, end: date):
+    """Daily vitals only, for backfilling history in chunks (max 31 days per call)."""
+    if end < start or (end - start).days > 30:
+        raise HTTPException(422, "Intervallo massimo 31 giorni")
+    end = min(end, today_local())
+    dates = [start + timedelta(i) for i in range((end - start).days + 1)]
+    with ThreadPoolExecutor(WORKERS) as ex:
+        return {"days": list(ex.map(load_day, dates))}
 
 
 class AIRequest(BaseModel):
