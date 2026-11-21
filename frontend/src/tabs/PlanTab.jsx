@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BookOpen, CalendarCheck, ChevronDown, Flag, Gauge, HeartPulse, ListChecks, Medal, Target } from 'lucide-react';
+import { BookOpen, CalendarCheck, ChevronDown, Flag, Gauge, ListChecks, Medal, Target } from 'lucide-react';
 import { AIBox, Card, Kpi, TONE } from '../components/ui';
 import { planCoachText } from '../lib/insights';
 import { BASELINES, RACE_DATE, RACE_TIPS, RULES } from '../lib/plan';
@@ -140,38 +140,6 @@ function Gates({ a }) {
   );
 }
 
-function ZoneAlert({ a }) {
-  const alerts = a.zoneAlerts ?? [];
-  const warn = alerts.filter((x) => x.tone === 'warn');
-  const [open, setOpen] = useState(warn.length > 0);
-  const tone = warn.length ? 'warn' : 'good';
-  return (
-    <section className={`glass min-w-0 rounded-xl border-l-2 ${TONE[tone].border} px-5 py-3 lg:col-span-3`}>
-      <button type="button" onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-3 text-left">
-        <HeartPulse size={16} className={`shrink-0 ${TONE[tone].text}`} />
-        <span className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-200">Zone FC</span>
-        <span className="min-w-0 flex-1 truncate text-xs text-gray-400">
-          {warn.length ? `${warn.length} ${warn.length === 1 ? 'motivo' : 'motivi'} per aggiornare le zone: ${warn.map((x) => x.title.toLowerCase()).join(' · ')}` : `Zone coerenti con i tuoi dati · ${a.hrZoneCfg.label}`}
-        </span>
-        <ChevronDown size={14} className={`shrink-0 text-gray-500 transition ${open ? 'rotate-180' : ''}`} />
-      </button>
-      {open && (
-        <div className="mt-3 space-y-2">
-          {alerts.map((x) => (
-            <div key={x.title} className={`rounded-md border-l-2 ${TONE[x.tone].border} bg-void/60 px-3 py-2 text-xs leading-relaxed text-gray-300`}>
-              <b className={TONE[x.tone].text}>{x.title}</b>
-              {x.action && <span className="num ml-2 rounded border border-edge px-1.5 py-0.5 text-[10px] text-gray-200">{x.action}</span>}
-              <div className="mt-0.5">{x.text}</div>
-            </div>
-          ))}
-          {!alerts.length && <p className="text-xs text-gray-500">Nessun segnale che le zone siano da aggiornare. Ricontrollo a ogni sincronizzazione.</p>}
-          <p className="text-[10px] text-gray-600">Le zone si aggiornano da sole quando le cambi in Garmin Connect (app → Impostazioni utente → Zone FC).</p>
-        </div>
-      )}
-    </section>
-  );
-}
-
 function PacesZones({ a }) {
   const cfg = a.hrZoneCfg;
   return (
@@ -285,7 +253,6 @@ function Rules() {
 export function PlanTab({ a }) {
   return (
     <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-      <ZoneAlert a={a} />
       <Overview a={a} />
       <ThisWeek a={a} />
       <AIBox title="AI Plan Coach" icon={Target} task="plan" heuristic={planCoachText} info="planWeek" />

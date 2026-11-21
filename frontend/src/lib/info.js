@@ -87,7 +87,7 @@ export const INFO = {
   },
   planZones: {
     what: 'Ritmi del piano e zone FC attive, confrontate con quelle scritte nel piano.',
-    how: 'Le zone attive sono lette da Garmin Connect a ogni sincronizzazione (profilo corsa, o predefinito). Se non disponibili: standard % FCR con FC max 195, riposo 57 e limiti 29/58/71/80/91%. Il riquadro “Zone FC” in cima avvisa quando i dati suggeriscono di aggiornarle: FC max superata più volte, FC a riposo misurata diversa da quella impostata, soglia del lattato Garmin fuori dalla Z4, uscite facili a ritmo del piano che finiscono in Z3.',
+    how: 'Le zone attive sono lette da Garmin Connect a ogni sincronizzazione (profilo corsa, o predefinito). Se non disponibili: standard % FCR con FC max 195, riposo 57 e limiti 29/58/71/80/91%. Puoi forzare le zone standard dalle Impostazioni.',
     read: 'Guida con lo sforzo e il ritmo; la FC è il controllo. Negli allunghi e nelle ripetute brevi la FC non fa in tempo a salire.',
   },
   planRace: {
@@ -122,3 +122,211 @@ export const INFO = {
     read: 'Il trigger più frequente è quello da sorvegliare per primo.',
   },
 };
+
+// New cards
+Object.assign(INFO, {
+  runDetail: {
+    what: 'Analisi completa della corsa selezionata: parziali km per km, gestione dello sforzo, zone, confronto con le uscite simili e risposta del tuo corpo.',
+    how: 'Dai lap da 1 km: passo e FC per km, metà distanza per lo split, deviazione standard del passo per la regolarità. Il confronto usa le uscite dello stesso tipo (facile, lungo, qualità) dei 90 giorni precedenti. Il contesto viene dai dati giornalieri di quel giorno e del giorno dopo.',
+    read: 'Le note in fondo riassumono cosa è andato bene (verde) e cosa correggere (ambra).',
+  },
+  runsOverview: {
+    what: 'Tutte le corse del periodo selezionato (7/14/30/90 giorni) confrontate con il periodo precedente di uguale durata.',
+    how: 'Totali sommati sulle corse; passo medio = tempo totale / km totali; FC media pesata sulla durata. Record cercati nei lap degli ultimi 6 mesi (il miglior tratto consecutivo di 5 e 10 km). Le tendenze sono regressioni lineari sulle sole uscite facili, espresse ogni 30 giorni.',
+    read: 'Volume in crescita oltre il 30% rispetto al periodo prima = attenzione; FC delle uscite facili in calo = miglioramento aerobico.',
+  },
+  hrPace: {
+    what: 'Il rapporto tra battiti e ritmo nel tempo: la prova più diretta che il tuo motore aerobico sta migliorando.',
+    how: 'Ogni km di ogni corsa (escluso il primo, dove la FC sta ancora salendo) diventa un punto passo-FC. Dalla relazione media tra passo e FC di tutti i tuoi km stimo, per ogni km, che FC avresti avuto al ritmo di riferimento e che ritmo avresti tenuto alla FC di riferimento (il limite della tua Z2). Ogni punto settimanale è la mediana delle 4 settimane precedenti.',
+    read: 'Migliori se la FC a ritmo costante scende e il ritmo a FC costante sale. 2-3 bpm in meno o 10 s/km in più in 2 mesi sono un miglioramento reale. Caldo, salite e stanchezza alzano la FC: conta la tendenza, non il singolo punto.',
+  },
+});
+
+// "Elemento per elemento": every series, column and KPI with its meaning and the ideal value.
+const ITEMS = {
+  readiness: [
+    ['Numero al centro', 'Readiness di oggi, 0-100', '≥ 85 ottimale, 70-84 buona'],
+    ['vs μ30', 'Differenza dalla tua media degli ultimi 30 giorni', 'positivo'],
+    ['Anello azzurro · HRV + FC riposo', 'Sistema nervoso: HRV e FC a riposo rispetto alla tua normalità', '≥ 85'],
+    ['Anello viola · Sonno', 'Score sonno Garmin riscalato', '≥ 85 (score Garmin ≥ 78)'],
+    ['Anello ambra · Stress', 'Più è pieno, meno stress hai avuto', '≥ 80 (stress medio ≤ 35)'],
+    ['Anello verde · Body Battery', 'Massimo di Body Battery raggiunto oggi', '≥ 80'],
+    ['Longevity index', 'Salute a lungo termine dalle medie di 30 giorni', '≥ 70'],
+    ['Grafico in basso', 'Readiness giorno per giorno; linea grigia = tua media', 'sopra la linea'],
+  ],
+  hrvRhr: [
+    ['Linea azzurra · HRV', 'Variabilità del battito durante la notte (ms). Più alta = sistema nervoso riposato', 'dentro o sopra la banda'],
+    ['Banda azzurra', 'Tua normalità: media ± 1 deviazione standard dei 30 giorni prima', '—'],
+    ['Linea rossa · FC riposo', 'Battiti a riposo (asse destro). Più bassa = cuore riposato', 'sulla o sotto la tratteggiata'],
+    ['Tratteggiate', 'Baseline (media 30 giorni) di HRV e FC riposo', '—'],
+    ['z', 'Quante deviazioni standard sei lontano dalla media', 'tra −1 e +1, o positivo per l’HRV'],
+    ['Trend 3gg', 'HRV medio degli ultimi 3 giorni rispetto alla baseline', 'sopra −10%'],
+  ],
+  sleep: [
+    ['Barre viola scuro · Profondo', 'Sonno profondo: riparazione fisica', '15-25% del totale'],
+    ['Barre azzurre · REM', 'Sonno REM: recupero mentale e memoria', '20-25%'],
+    ['Barre blu · Leggero', 'Sonno leggero', '45-55%'],
+    ['Barre ambra · Veglia', 'Risvegli durante la notte', '< 30 min'],
+    ['Linea verde · Score', 'Score sonno Garmin (asse destro)', '≥ 80'],
+    ['Linea tratteggiata', 'Il tuo bisogno di sonno', 'barre che la raggiungono'],
+    ['Debito 7gg', 'Ore mancanti rispetto al bisogno nell’ultima settimana', '< 3 h'],
+    ['A letto / Sveglia ±', 'Orario medio e quanto varia di notte in notte', '± < 30-45 min'],
+    ['Sonno ↔ HRV', 'Quanto il tuo HRV dipende dalle ore dormite (r da −1 a 1)', 'r > 0,3 = dormire di più ti aiuta subito'],
+  ],
+  sleepCoach: [
+    ['Architettura', 'Durata e fasi di stanotte e della settimana', 'vedi range delle fasi'],
+    ['Regolarità', 'Costanza degli orari', '± < 45 min'],
+    ['Legame sonno → recupero', 'Effetto del sonno sul tuo HRV', 'r > 0,3'],
+    ['Prescrizioni', 'Azioni concrete, con orario di letto calcolato dalla tua sveglia media', '—'],
+  ],
+  ans: [
+    ['Barre', 'Stress ogni 15 minuti: blu riposo (≤ 25), ambra medio, arancio/rosso alto (> 75)', 'blu di notte e nelle pause'],
+    ['Area verde · Body Battery', 'La tua “batteria”: sale quando recuperi, scende con stress e attività', 'sale di ≥ 40 punti di notte'],
+    ['Finestre colorate', 'Verde = sonno che ricarica; rossa = notte senza recupero; ambra = stress dopo pranzo o serale', 'solo verde'],
+    ['Stress notte', 'Stress medio durante il sonno', '< 20'],
+    ['Ricarica notte', 'Body Battery guadagnata dormendo', '≥ 40'],
+  ],
+  dailyAns: [
+    ['Barre verdi', 'Body Battery ricaricata nel giorno', 'alte'],
+    ['Barre rosse', 'Body Battery consumata', 'simili alle verdi nel lungo periodo'],
+    ['Linea ambra', 'Stress medio del giorno (asse destro)', '< 35'],
+  ],
+  pmc: [
+    ['Area azzurra · CTL (fitness)', 'Carico medio delle ultime ~6 settimane: la tua forma di fondo', 'in salita graduale'],
+    ['Linea rossa · ATL (fatica)', 'Carico medio dell’ultima settimana', 'sopra la CTL nei blocchi, sotto in scarico'],
+    ['Barre grigie · Carico', 'Carico di ogni giorno (TRIMP)', '—'],
+    ['Scala “Forma oggi”', 'TSB = CTL − ATL con il cursore sul valore di oggi', '−10…−30 per costruire, +5…+20 il giorno della gara'],
+    ['Barre TSB colorate', 'Forma giorno per giorno, colore = zona', 'verdi (ottimale) nei blocchi'],
+    ['Linea ACWR', 'Carico ultima settimana / media 4 settimane', '0,8-1,3 (fascia verde); > 1,5 rischio'],
+    ['Ramp rate', 'Quanto sale la CTL in una settimana', '≤ 5-7 punti'],
+    ['Rischio OT', 'Rischio di sovrallenamento da HRV, FC riposo, ACWR, TSB, sonno', '< 35'],
+  ],
+  ef: [
+    ['Punti azzurri / rossi / viola', 'Corse facili / qualità / lunghi: efficienza = velocità (m/min) / FC', 'in salita nel tempo'],
+    ['Linea tratteggiata', 'Tendenza dell’efficienza sulle sole corse facili', 'in salita'],
+    ['Trend EF', 'Variazione dell’efficienza nel periodo', '> +2%'],
+    ['Barre decoupling', 'Deriva cardiaca di ogni corsa: verde < 5%, ambra > 5%', 'verdi'],
+  ],
+  zones: [
+    ['Barra Z1-2 / Z3 / Z4-5', 'Quota del tempo di corsa per intensità', '≈ 80 / ≤ 10 / 10-15'],
+    ['Righe Z1…Z5', 'Ore passate in ogni zona FC', 'Z2 la più lunga'],
+    ['Barre settimanali', 'Ore per settimana divise per intensità', 'azzurro dominante'],
+    ['Tetto easy run', 'FC da non superare nelle corse facili (limite della tua Z2)', '—'],
+  ],
+  race: [
+    ['VO2max', 'Consumo massimo di ossigeno stimato da Garmin', 'in salita'],
+    ['Stima', 'Tempo previsto con allenamento coerente, penalizzato se corri poco', '—'],
+    ['Garmin', 'Previsione dell’orologio, per confronto', '—'],
+    ['Trend VO2max', 'Andamento del VO2max nel periodo', 'in salita'],
+  ],
+  runs: [
+    ['Passo', 'Minuti per km', '—'],
+    ['FC med/max', 'Battiti medi e massimi', 'nelle facili sotto il tetto Z2'],
+    ['Cad.', 'Passi al minuto', '165-180'],
+    ['TE A/An', 'Training Effect aerobico/anaerobico (0-5)', 'facili 2-3 / 0-1; qualità 3-4 / 2-3'],
+    ['Decoup.', 'Deriva cardiaca nella corsa', '< 5%'],
+    ['EF', 'Velocità/FC: più alto = più efficiente', 'in salita nel tempo'],
+  ],
+  runDetail: [
+    ['Linea azzurra · Passo', 'Passo di ogni km; più in alto = più veloce', 'piatta nelle uscite continue'],
+    ['Linea rossa · FC', 'FC media di ogni km', 'dentro la zona prevista'],
+    ['Sfondo colorato', 'Le tue zone FC (blu Z1 … rosso Z5)', '—'],
+    ['1ª / 2ª metà', 'Passo e FC delle due metà della corsa', '2ª metà uguale o più veloce (split negativo)'],
+    ['Variabilità ritmo', 'Quanto cambia il passo tra i km', '< 5% nelle uscite continue'],
+    ['Deriva cardiaca', 'Quanto è salita la FC a parità di ritmo', '< 5%'],
+    ['Costo cardiaco', 'Battiti spesi per ogni km (FC × passo)', 'in calo nel tempo a parità di uscita'],
+    ['Falcata', 'Metri per passo (velocità / cadenza)', '—'],
+    ['Training Effect', 'Stimolo aerobico / anaerobico (0-5)', 'coerente con lo scopo dell’uscita'],
+    ['Δ media (parziali)', 'Secondi in più (+) o in meno (−) rispetto al passo medio', 'vicino a 0; verde = km più veloce'],
+    ['Tempo in zona', 'Minuti e percentuale in ogni zona FC', 'facili: ≥ 70% in Z1-Z2'],
+    ['HRV mattina / giorno dopo', 'HRV rispetto alla tua baseline prima e dopo la corsa', 'sopra −12%'],
+    ['Rispetto alle simili', 'Media delle uscite dello stesso tipo negli ultimi 90 giorni', 'passo più veloce a FC uguale o minore'],
+  ],
+  runsOverview: [
+    ['Km / Corse / Tempo', 'Totali del periodo', '—'],
+    ['vs periodo prec.', 'Confronto con il periodo precedente di uguale durata', 'volume entro +10-30%'],
+    ['Barre azzurre', 'Km della settimana', 'crescita graduale'],
+    ['Barre viola', 'Uscita più lunga della settimana', 'in crescita verso i 18-20 km per la mezza'],
+    ['Linea ambra', 'Passo medio settimanale (in alto = più veloce)', '—'],
+    ['Per tipo di uscita', 'Ripartizione facili / lunghi / qualità', 'qualità ≤ 1 uscita su 3'],
+    ['Record', 'Km più veloce e migliori 5/10 km trovati nei tuoi lap', '—'],
+    ['Tendenze uscite facili', 'Variazione ogni 30 giorni di FC, passo e cadenza', 'FC in calo, passo stabile o più veloce'],
+    ['Costanza', 'Settimane con almeno una corsa e pausa più lunga', 'pausa < 10 giorni'],
+  ],
+  hrPace: [
+    ['FC a ritmo costante', 'FC stimata se corressi sempre al ritmo di riferimento', 'in calo'],
+    ['Passo a FC costante', 'Passo stimato al limite della tua Z2; più in alto = più veloce', 'in salita'],
+    ['Linea tratteggiata bianca', 'Tendenza lineare dell’intero periodo', 'FC giù, passo su'],
+    ['Punti grigi / azzurri', 'Ogni km corso nel primo terzo / nell’ultimo terzo del periodo', 'nuvola azzurra più in basso o più a sinistra'],
+    ['Linee grigia / azzurra', 'Relazione media FC-ritmo di ciascun periodo', 'azzurra sotto la grigia'],
+    ['vs 2 mesi fa', 'Ultime 4 settimane contro le settimane 8-12 fa', '≤ −2 bpm o ≤ −5 s/km'],
+  ],
+  hybrid: [
+    ['Barre azzurre', 'Carico cardiovascolare settimanale (TRIMP)', 'stabile o in crescita graduale'],
+    ['Barre viola', 'Carico neuromuscolare dei pesi (durata × RPE / 4)', '20-35% del carico totale'],
+    ['Linea ambra', 'Km di corsa a settimana', '—'],
+    ['Conflitti', 'Leg day vicino a una seduta dura o a un lungo', 'nessuno'],
+  ],
+  balance: [
+    ['Carico cardio / forza', 'Questa settimana rispetto alla media di 4 settimane (50 = uguale)', '40-65'],
+    ['Intensità', 'Quota di tempo in Z4-Z5', '25-40'],
+    ['Recupero', 'Readiness', '≥ 75'],
+    ['Sonno', 'Ore dormite rispetto al bisogno', '≥ 90'],
+    ['Freschezza', 'Dal TSB (50 = neutro)', '40-70'],
+  ],
+  volume: [
+    ['Barre viola', 'Tonnellaggio settimanale (kg sollevati)', 'stabile o in crescita graduale'],
+    ['Linea verde', 'Numero di sedute a settimana', '2'],
+    ['RPE', 'Sforzo percepito 1-10 (modificabile)', '6-8'],
+    ['Focus', 'Gruppo muscolare principale (modificabile)', 'almeno 1 Lower a settimana, lontano dai lunghi'],
+  ],
+  planOverview: [
+    ['Settimana', 'Settimana corrente del piano di 22', '—'],
+    ['Obiettivo attuale', 'A = 1:59, B = 2:03, C = 2:10, aggiornato dai controlli', 'A'],
+    ['Aderenza chiavi', 'Uscite chiave fatte (parziali al 50%)', '≥ 85%'],
+    ['Barra settimane', 'Verde fatta, ambra parziale, rossa saltata, azzurra in corso', 'tutta verde'],
+  ],
+  planWeek: [
+    ['Badge stato', '✓ fatta · ◐ parziale · ✗ saltata · ● da fare', '✓'],
+    ['Riquadro Garmin', 'La corsa abbinata automaticamente e quanto è simile alla sessione', 'somiglianza ≥ 75%'],
+    ['Note verdi / ambra', 'Blocco e FC rispettati / da correggere', 'verdi'],
+    ['Seconda uscita', 'Consiglio sulla facoltativa in base a readiness, carico e malesseri', '—'],
+  ],
+  planGates: [
+    ['A / B / C', 'Esito del controllo e obiettivo che ne deriva', 'A'],
+    ['Dettaglio', 'Blocco trovato nei lap, FC degli ultimi km e sforzo', 'FC ≤ 175 e sforzo ≤ 7/10'],
+  ],
+  planZones: [
+    ['Ritmi', 'Passi da tenere sul Garmin per ogni tipo di lavoro', '—'],
+    ['% FCR', 'Percentuale della FC di riserva (FC max − FC riposo) di ogni zona', '—'],
+    ['Tue (bpm)', 'Le tue zone attive in battiti', '—'],
+    ['Piano', 'Le zone scritte nel piano originale, per confronto', '—'],
+  ],
+  illnessNow: [
+    ['Indice', 'Quanto i segnali di oggi si discostano dalla tua normalità (50 = soglia)', '< 35'],
+    ['FC riposo vs base', 'Battiti a riposo rispetto alla mediana dei 30 giorni', '< +3 bpm'],
+    ['HRV vs base', 'HRV rispetto alla mediana dei 30 giorni', 'sopra −12%'],
+    ['Sensibilità', 'Quanto deboli possono essere i segnali per essere segnalati', 'media'],
+  ],
+  illnessTimeline: [
+    ['Barre', 'Indice giornaliero: rosse = giorno anomalo, ambra = vicino alla soglia', 'grigie'],
+    ['Linea tratteggiata', 'Soglia di allarme (50)', 'sotto'],
+    ['Linea rossa', 'Scarto della FC a riposo dalla baseline (bpm)', 'vicino a 0'],
+    ['Linea azzurra', 'Scarto dell’HRV dalla baseline (%)', 'vicino a 0 o positivo'],
+    ['Fasce colorate', 'Episodi rilevati', '—'],
+  ],
+  illnessEpisodes: [
+    ['Tipo', 'Malattia, sovraccarico, debito di sonno o stress', '—'],
+    ['Confidenza', 'Quanto è affidabile la rilevazione (segnali concordi e durata)', '—'],
+    ['Rientro', 'Giorni per tornare in baseline dopo l’episodio', '≤ 3'],
+    ['Sedute dure durante', 'Allenamenti intensi mentre stavi male', 'nessuna'],
+  ],
+  illnessPatterns: [
+    ['Dopo picchi di carico', 'Episodi preceduti da una settimana ≥ 1,3× il normale', '0'],
+    ['Dopo notti corte', 'Episodi preceduti da sonno sotto la tua media', '0'],
+    ['Allenato forte da malato', 'Episodi con sedute dure durante', '0'],
+  ],
+};
+Object.entries(ITEMS).forEach(([k, v]) => {
+  if (INFO[k]) INFO[k].items = v;
+});

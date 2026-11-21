@@ -69,6 +69,7 @@ export function fmtPace(secPerKm) {
 }
 export function fmtDuration(sec) {
   if (!isNum(sec)) return '—';
+  sec = Math.round(sec); // round first, so 2699.7 s is 45:00 and not 44:60
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
   const s = Math.round(sec % 60);

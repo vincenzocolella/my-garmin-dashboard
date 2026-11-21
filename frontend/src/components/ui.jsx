@@ -62,6 +62,25 @@ export function InfoPanel({ entry, onClose }) {
       {entry.what && <p className="mb-1.5"><b className="text-cyan">Cos’è · </b>{entry.what}</p>}
       {entry.how && <p className="mb-1.5"><b className="text-cyan">Come si calcola · </b>{entry.how}</p>}
       {entry.read && <p><b className="text-cyan">Come leggerlo · </b>{entry.read}</p>}
+      {entry.items?.length > 0 && (
+        <div className="mt-3">
+          <b className="text-cyan">Elemento per elemento</b>
+          <div className="mt-1.5 overflow-x-auto">
+            <table className="w-full min-w-[420px] text-[11px]">
+              <thead><tr className="text-left text-[10px] uppercase tracking-wider text-gray-500"><th className="py-1 pr-2">Elemento</th><th className="pr-2">Cosa indica</th><th>Ideale</th></tr></thead>
+              <tbody>
+                {entry.items.map(([name, meaning, ideal]) => (
+                  <tr key={name} className="border-t border-edge align-top">
+                    <td className="py-1 pr-2 font-semibold text-gray-200">{name}</td>
+                    <td className="py-1 pr-2 text-gray-400">{meaning}</td>
+                    <td className="py-1 text-emerald">{ideal}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

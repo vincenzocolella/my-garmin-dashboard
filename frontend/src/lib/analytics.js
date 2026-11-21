@@ -3,7 +3,7 @@ import {
 } from './util';
 import { detectIllness } from './illness';
 import { planStatus } from './plan';
-import { zoneAlerts, zoneConfig, zoneOf } from './zones';
+import { zoneConfig, zoneOf } from './zones';
 
 /** Strength sessions feed the PMC with half of their session-RPE load (neuromuscular fatigue is only partly systemic). */
 const PMC_STRENGTH_FACTOR = 0.5;
@@ -393,6 +393,7 @@ export function computeAnalytics(dataset, { rangeDays = 30, settings = {}, overr
 
   const result = {
     today, rangeStart, rangeDays, source: dataset.source, scenario: dataset.scenario, illness, hrZoneCfg,
+    rowsAll: rows, readinessAll: readinessSeries,
     profile: prof,
     latest, latestDate: latest.date,
     readiness, longevity, hrvRhr, hrvTrend, sleep, ans, pmc,
@@ -405,7 +406,6 @@ export function computeAnalytics(dataset, { rangeDays = 30, settings = {}, overr
     },
   };
   result.plan = planStatus(result);
-  result.zoneAlerts = zoneAlerts(result, dataset);
   return result;
 }
 

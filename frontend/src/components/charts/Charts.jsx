@@ -99,7 +99,8 @@ export function TimeChart({
     const ticks = niceTicks(lo, hi, 4);
     if (cfg.min == null) lo = Math.min(lo, ticks[0]);
     if (cfg.max == null) hi = Math.max(hi, ticks.at(-1));
-    const y = (v) => M.t + ih - ((v - lo) / (hi - lo)) * ih;
+    // invert: lower values drawn higher (pace: a faster km is "up")
+    const y = (v) => (cfg.invert ? M.t + ((v - lo) / (hi - lo)) * ih : M.t + ih - ((v - lo) / (hi - lo)) * ih);
     const format = cfg.format ?? ((v) => fmt(v, hi - lo < 5 ? 1 : 0));
     return { lo, hi, y, format, ticks: ticks.filter((t) => t >= lo - 1e-9 && t <= hi + 1e-9) };
   };
@@ -272,13 +273,13 @@ export function TimeChart({
 }
 
 /** Scatter over a numeric x (e.g. timestamps) with optional least-squares trend over a subset. */
-export function ScatterChart({ points, xFormat, yFormat = (v) => fmt(v, 2), height = 220, trendFilter, tooltip, yLabel }) {
+export function ScatterChart({ points, xFormat, yFormat = (v) => fmt(v, 2), height = 220, trendFilter, trends = [], tooltip, yLabel, emptyText = 'Nessuna corsa con passo e FC nel periodo' }) {
   const [ref, width] = useMeasure();
   const [hover, setHover] = useState(null);
   const M = { t: 10, r: 14, b: 22, l: 46 };
   const iw = Math.max(10, width - M.l - M.r);
   const ih = height - M.t - M.b;
-  if (!points.length) return <div ref={ref}><Empty height={height} text="Nessuna corsa con passo e FC nel periodo" /></div>;
+  if (!points.length) return <div ref={ref}><Empty height={height} text={emptyText} /></div>;
   const xs = points.map((p) => p.x);
   const ys = points.map((p) => p.y);
   const x0 = Math.min(...xs);
@@ -289,6 +290,7 @@ export function ScatterChart({ points, xFormat, yFormat = (v) => fmt(v, 2), heig
   const X = (v) => M.l + ((v - x0) / (x1 - x0)) * iw;
   const Y = (v) => M.t + ih - ((v - y0) / (y1 - y0)) * ih;
   const reg = trendFilter ? linreg(points.filter(trendFilter).map((p) => ({ x: p.x, y: p.y }))) : null;
+  const extra = trends.map((t) => ({ ...t, reg: linreg(points.filter(t.filter).map((p) => ({ x: p.x, y: p.y }))) })).filter((t) => t.reg);
   const ticks = niceTicks(y0, y1, 4).filter((t) => t >= y0 && t <= y1);
   const xt = Array.from({ length: 5 }, (_, i) => x0 + ((x1 - x0) * i) / 4);
   return (
@@ -306,6 +308,9 @@ export function ScatterChart({ points, xFormat, yFormat = (v) => fmt(v, 2), heig
           {reg && (
             <line className="chart-fade" x1={X(x0)} y1={Y(reg.intercept + reg.slope * x0)} x2={X(x1)} y2={Y(reg.intercept + reg.slope * x1)} stroke={C.cyan} strokeWidth={1.5} strokeDasharray="6 4" />
           )}
+          {extra.map((t) => (
+            <line key={t.color} className="chart-fade" x1={X(x0)} y1={Y(t.reg.intercept + t.reg.slope * x0)} x2={X(x1)} y2={Y(t.reg.intercept + t.reg.slope * x1)} stroke={t.color} strokeWidth={2.5} />
+          ))}
           {points.map((p, i) => (
             <circle key={i} className="chart-fade" cx={X(p.x)} cy={Y(p.y)} r={hover === i ? 7 : p.r ?? 5} fill={p.color} fillOpacity={0.75} stroke={p.color} strokeWidth={1.5}
               onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)} style={{ cursor: 'pointer', transition: 'r 150ms' }} />

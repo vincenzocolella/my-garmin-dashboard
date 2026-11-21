@@ -72,7 +72,10 @@ function makeRun(kind, ctx) {
   const block = plannedBlock
     ? { km: Math.min(km - 1, plannedBlock.km), pace: (plannedBlock.pace ?? 300) + ot * 7 + sleepy * 6 + r.normal(0, 3), hr: 168 + ot * 9 + sleepy * 6 + (plannedBlock.km >= 10 ? 2 : 0) }
     : null;
-  const laps = makeLaps(r, km, planned ? Math.max(basePace, planned.type === 'Easy' ? 415 : 405) : basePace, spec.hr + r.normal(0, 2), { block, drift: spec.dec ?? 2 });
+  const lapPace = planned ? Math.max(basePace, planned.type === 'Easy' ? 415 : 405) : basePace;
+  // slower than the athlete's usual pace for this kind of run → proportionally lower HR (~0.3 bpm per s/km)
+  const lapHr = spec.hr - Math.max(0, lapPace - basePace) * 0.3 + r.normal(0, 2);
+  const laps = makeLaps(r, km, lapPace, lapHr, { block, drift: spec.dec ?? 2 });
   const duration = laps.reduce((t, l) => t + l[1], 0);
   const pace = duration / km;
   const avgHr = Math.round(laps.reduce((t, l) => t + l[2] * l[1], 0) / duration);

@@ -433,8 +433,6 @@ export function planCoachText(a, persona) {
   if (next) lines.push(`• Prossimo controllo: settimana ${next.week} (${next.when}). A se ${next.a}.`);
   const graded = p.gates.filter((g) => g.grade);
   if (graded.length) lines.push(`• Controlli: ${graded.map((g) => `sett. ${g.week} → ${g.grade}`).join(', ')}.`);
-  const zw = (a.zoneAlerts ?? []).filter((z) => z.tone === 'warn');
-  if (zw.length) lines.push(`• Zone FC da rivedere: ${zw.map((z) => z.title.toLowerCase() + (z.action ? ` (${z.action})` : '')).join('; ')}.`);
   lines.push('', persona === 'sergeant' ? `ORDINE: ${nextSession(a).title}. Il sub-2 non arriva per grazia ricevuta.` : `Oggi: ${nextSession(a).title} (${nextSession(a).why}).`);
   return lines.join('\n');
 }
