@@ -102,7 +102,7 @@ export const INFO = {
     read: 'Se salti una chiave, ripeti la settimana. Se ne salti due di fila, rivedi l’obiettivo.',
   },
   illnessNow: {
-    what: 'Se il tuo corpo mostra oggi segnali compatibili con un malessere.',
+    what: 'Radar sintomi: se il tuo corpo mostra oggi segnali compatibili con un malessere.',
     how: 'Ogni giorno confronta FC a riposo, HRV, stress, score sonno e Body Battery con la mediana dei tuoi 30 giorni precedenti (robusta: pochi giorni anomali non la spostano). Allarme quando FC riposo ↑ e HRV ↓ insieme oltre 1 deviazione e l’indice combinato supera la soglia, o un solo segnale è molto forte.',
     read: 'Indice 0-100: 50 = soglia di allarme. È statistica sui dati dell’orologio, non una diagnosi.',
   },

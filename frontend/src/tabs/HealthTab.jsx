@@ -2,7 +2,8 @@ import { Activity, BatteryCharging, BrainCircuit, HeartPulse, Moon, ShieldPlus }
 import { C, RingGauge, TimeChart } from '../components/charts/Charts';
 import { AIBox, Card, Kpi, Legend, TONE } from '../components/ui';
 import { bioAuditText, sleepCoachText } from '../lib/insights';
-import { fmt, fmtHours, isNum, signed } from '../lib/util';
+import { SymptomRadar } from './SymptomRadar';
+import { fmt, fmtH, fmtHours, isNum, signed } from '../lib/util';
 
 const STRESS_COLOR = (v) => (v <= 25 ? '#3B82F6' : v <= 50 ? '#F59E0B99' : v <= 75 ? C.amber : C.crimson);
 const toneFor = (v, good = 65, warn = 45) => (!isNum(v) ? 'neutral' : v >= good ? 'good' : v >= warn ? 'warn' : 'bad');
@@ -80,25 +81,25 @@ function SleepCard({ a }) {
   const s = a.sleep;
   const debtTone = s.debt7 >= 6 ? 'bad' : s.debt7 >= 3 ? 'warn' : 'good';
   return (
-    <Card title="Sleep Architecture & Debt" subtitle={`Fasi del sonno (ore) e punteggio · bisogno ${s.need} h/notte`} icon={Moon} insightKey="sleep" className="lg:col-span-2">
+    <Card title="Sleep Architecture & Debt" subtitle={`Fasi del sonno e punteggio · bisogno ${fmtH(s.need)} a notte`} icon={Moon} insightKey="sleep" className="lg:col-span-2">
       <div className="mb-4 grid grid-cols-2 gap-4 sm:grid-cols-6">
-        <Kpi label="Debito 7gg" value={fmt(s.debt7, 1)} unit="h" tone={debtTone} big sub={s.surplus7 ? `surplus ${fmt(s.surplus7, 1)} h` : undefined} />
+        <Kpi label="Debito 7gg" value={fmtH(s.debt7)} tone={debtTone} big sub={s.surplus7 ? `surplus ${fmtH(s.surplus7)}` : undefined} />
         <Kpi label="Stanotte" value={fmtHours(s.lastNight?.total)} sub={`score ${fmt(s.lastNight?.score)}`} />
-        <Kpi label="Media 7gg" value={fmt(s.avg7, 1)} unit="h" />
+        <Kpi label="Media 7gg" value={fmtH(s.avg7)} />
         <Kpi label="Efficienza" value={fmt(s.efficiency7, 1)} unit="%" tone={(s.efficiency7 ?? 100) < 87 ? 'warn' : undefined} />
         <Kpi label="Deep" value={fmt(s.deepPct7, 0)} unit="%" tone={(s.deepPct7 ?? 20) < 13 ? 'warn' : undefined} />
         <Kpi label="REM" value={fmt(s.remPct7, 0)} unit="%" />
       </div>
-      <TimeChart rows={s.rows} height={240} left={{ label: 'ore', format: (v) => fmt(v, 0) }} right={{ min: 0, max: 100, label: 'score' }}
+      <TimeChart rows={s.rows} height={240} left={{ label: 'ore', format: (v) => fmtH(v) }} right={{ min: 0, max: 100, label: 'score' }}
         series={[
-          { key: 'deep', label: 'Profondo', type: 'stack', color: '#4F46E5', format: (v) => `${fmt(v, 1)} h` },
-          { key: 'rem', label: 'REM', type: 'stack', color: C.cyan, format: (v) => `${fmt(v, 1)} h` },
-          { key: 'light', label: 'Leggero', type: 'stack', color: '#1D4ED8', format: (v) => `${fmt(v, 1)} h` },
-          { key: 'awake', label: 'Veglia', type: 'stack', color: C.amber, format: (v) => `${fmt(v, 1)} h` },
+          { key: 'deep', label: 'Profondo', type: 'stack', color: '#4F46E5', format: (v) => fmtH(v) },
+          { key: 'rem', label: 'REM', type: 'stack', color: C.cyan, format: (v) => fmtH(v) },
+          { key: 'light', label: 'Leggero', type: 'stack', color: '#1D4ED8', format: (v) => fmtH(v) },
+          { key: 'awake', label: 'Veglia', type: 'stack', color: C.amber, format: (v) => fmtH(v) },
           { key: 'score', label: 'Score', axis: 'right', color: C.emerald, width: 1.5 },
         ]}
-        refLines={[{ y: s.need, color: C.violet, label: `bisogno ${s.need} h` }]}
-        tooltipExtra={(row) => <div className="mt-1 text-[10px] text-gray-500">Totale {fmt(row.total, 1)} h · efficienza {fmt(row.efficiency, 1)}%</div>} />
+        refLines={[{ y: s.need, color: C.violet, label: `bisogno ${fmtH(s.need)}` }]}
+        tooltipExtra={(row) => <div className="mt-1 text-[10px] text-gray-500">Totale {fmtH(row.total)} · efficienza {fmt(row.efficiency, 1)}%</div>} />
       <Legend items={[{ label: 'Profondo', color: '#4F46E5' }, { label: 'REM', color: C.cyan }, { label: 'Leggero', color: '#1D4ED8' }, { label: 'Veglia', color: C.amber }, { label: 'Score', color: C.emerald }]} />
       <div className="mt-4 grid grid-cols-2 gap-4 border-t border-edge pt-3 sm:grid-cols-4">
         <Kpi label="A letto (media 14gg)" value={s.bedtimeAvg ?? '—'} sub={isNum(s.bedtimeSdMin) ? `± ${s.bedtimeSdMin} min` : undefined} tone={(s.bedtimeSdMin ?? 0) > 45 ? 'warn' : undefined} />
@@ -159,7 +160,7 @@ function DailyAnsCard({ a }) {
   );
 }
 
-export function HealthTab({ a }) {
+export function HealthTab({ a, sensitivity, onSensitivity, history }) {
   return (
     <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
       <ReadinessCard a={a} />
@@ -169,6 +170,7 @@ export function HealthTab({ a }) {
       <AnsCard a={a} />
       <AIBox title="AI Recupero" icon={Activity} task="bioAudit" heuristic={bioAuditText} />
       <DailyAnsCard a={a} />
+      <SymptomRadar a={a} sensitivity={sensitivity} onSensitivity={onSensitivity} history={history} />
     </div>
   );
 }

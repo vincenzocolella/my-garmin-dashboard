@@ -13,7 +13,6 @@ import { useSettings, useStored } from './lib/settings';
 import { addDays, localToday } from './lib/util';
 import { HealthTab } from './tabs/HealthTab';
 import { PlanTab } from './tabs/PlanTab';
-import { WellnessTab } from './tabs/WellnessTab';
 import { RunningTab } from './tabs/RunningTab';
 import { StrengthTab } from './tabs/StrengthTab';
 
@@ -44,6 +43,9 @@ export default function App() {
   const [overrides, setOverrides] = useStored('bio-os-overrides', {});
   const [range, setRange] = useStored('bio-os-range', 30);
   const [tab, setTab] = useStored('bio-os-tab', 'health');
+  useEffect(() => {
+    if (tab === 'wellness') setTab('health'); // the illness tab now lives in the health tab (Radar sintomi)
+  }, [tab, setTab]);
   const [dataset, setDataset] = useState(null);
   const [imported, setImported] = useState(null);
   const [status, setStatus] = useState({ state: 'idle' });
@@ -216,9 +218,8 @@ export default function App() {
           <AIProvider settings={settings} analytics={analytics} backendStatus={backendStatus}>
             <ErrorBoundary>
               <JudgePanel trigger={judgeTrigger} onPersona={(p) => updateSettings({ persona: p })} />
-              {tab === 'health' && <HealthTab a={analytics} />}
+              {(tab === 'health' || tab === 'wellness') && <HealthTab a={analytics} sensitivity={settings.illnessSensitivity} onSensitivity={(v) => updateSettings({ illnessSensitivity: v })} history={history} />}
               {tab === 'plan' && <PlanTab a={analytics} />}
-              {tab === 'wellness' && <WellnessTab a={analytics} sensitivity={settings.illnessSensitivity} onSensitivity={(v) => updateSettings({ illnessSensitivity: v })} history={history} />}
               {tab === 'running' && <RunningTab a={analytics} />}
               {tab === 'strength' && <StrengthTab a={analytics} overrides={overrides} setOverrides={setOverrides} />}
             </ErrorBoundary>

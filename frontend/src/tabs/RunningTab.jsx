@@ -6,7 +6,7 @@ import { tsbZone } from '../lib/analytics';
 import { hrZones, overtrainingRisk, runningCoachText } from '../lib/insights';
 import { CLASS_LABEL, hrPaceTrend, runDetail, runsOverview } from '../lib/runs';
 import { ZONE_NAMES } from '../lib/zones';
-import { fmt, fmtDay, fmtDuration, fmtPace, isNum, signed } from '../lib/util';
+import { fmt, fmtDay, fmtDuration, fmtH, fmtPace, isNum, signed } from '../lib/util';
 
 const ZONE_COLORS = { transition: C.blue, fresh: C.cyan, neutral: C.slate, optimal: C.emerald, risk: C.crimson };
 const TSB_ZONES = [
@@ -139,16 +139,16 @@ function ZonesCard({ a }) {
               <div key={i} className="flex items-center gap-2 text-[11px]">
                 <span className="w-28 text-gray-400">{names[i]}</span>
                 <div className="h-1.5 flex-1 rounded-full bg-edge"><div className="h-1.5 rounded-full" style={{ width: `${tot ? (s / tot) * 100 : 0}%`, background: colors[i] }} /></div>
-                <span className="num w-14 text-right text-gray-300">{fmt(s / 3600, 1)} h</span>
+                <span className="num w-14 text-right text-gray-300">{fmtH(s / 3600)}</span>
               </div>
             ))}
           </div>
           <div className="mt-4 text-[10px] uppercase tracking-[0.16em] text-gray-500">Ore per settimana</div>
-          <TimeChart rows={zn.weekly} height={140} xFormat={(d) => fmtDay(d)}
+          <TimeChart rows={zn.weekly} height={140} xFormat={(d) => fmtDay(d)} left={{ format: (v) => fmtH(v) }}
             series={[
-              { key: 'low', label: 'Z1-2', type: 'stack', color: C.cyan, format: (v) => `${fmt(v, 1)} h` },
-              { key: 'mid', label: 'Z3', type: 'stack', color: C.amber, format: (v) => `${fmt(v, 1)} h` },
-              { key: 'high', label: 'Z4-5', type: 'stack', color: C.crimson, format: (v) => `${fmt(v, 1)} h` },
+              { key: 'low', label: 'Z1-2', type: 'stack', color: C.cyan, format: (v) => fmtH(v) },
+              { key: 'mid', label: 'Z3', type: 'stack', color: C.amber, format: (v) => fmtH(v) },
+              { key: 'high', label: 'Z4-5', type: 'stack', color: C.crimson, format: (v) => fmtH(v) },
             ]} />
           <p className="mt-2 text-[11px] text-gray-500">Tetto easy run: <span className="num text-cyan">{zoneHr.z2Top} bpm</span> · soglia ~<span className="num text-gray-300">{zoneHr.threshold} bpm</span></p>
         </>
@@ -339,7 +339,7 @@ function RunDetail({ a, run, onClose }) {
           {ctx ? (
             <div className="grid grid-cols-2 gap-3">
               <Kpi label="Readiness quel giorno" value={fmt(ctx.readiness)} tone={isNum(ctx.readiness) ? (ctx.readiness >= 80 ? 'good' : ctx.readiness >= 65 ? 'warn' : 'bad') : undefined} />
-              <Kpi label="Sonno notte prima" value={fmt(ctx.sleepH, 1)} unit="h" sub={isNum(ctx.sleepScore) ? `score ${ctx.sleepScore}` : undefined} tone={isNum(ctx.sleepH) && ctx.sleepH < 6.5 ? 'warn' : undefined} />
+              <Kpi label="Sonno notte prima" value={fmtH(ctx.sleepH)} sub={isNum(ctx.sleepScore) ? `score ${ctx.sleepScore}` : undefined} tone={isNum(ctx.sleepH) && ctx.sleepH < 6.5 ? 'warn' : undefined} />
               <Kpi label="HRV mattina" value={signed(ctx.hrvPct)} unit="% vs base" tone={(ctx.hrvPct ?? 0) <= -12 ? 'bad' : undefined} />
               <Kpi label="Forma (TSB) prima" value={signed(ctx.tsbBefore, 1)} />
               <Kpi label="HRV giorno dopo" value={signed(ctx.nextHrvPct)} unit="% vs base" tone={isNum(ctx.nextHrvPct) ? (ctx.nextHrvPct <= -12 ? 'bad' : 'good') : undefined} />
@@ -382,7 +382,7 @@ function RunsOverview({ a }) {
         <Kpi label="Corse" value={t.count} sub={`${fmt(t.perWeek, 1)}/settimana`} />
         <Kpi label="Km totali" value={fmt(t.km, 1)} sub={sub(dl.km)} tone={isNum(dl.km) && dl.km > 30 ? 'warn' : undefined} />
         <Kpi label="Km/settimana" value={fmt(t.kmPerWeek, 1)} />
-        <Kpi label="Tempo" value={fmtDuration(t.time)} />
+        <Kpi label="Tempo" value={fmtH(t.time / 3600)} />
         <Kpi label="Passo medio" value={fmtPace(t.pace)} unit="/km" sub={isNum(dl.pace) ? `${dl.pace > 0 ? '+' : ''}${dl.pace} s vs prec.` : undefined} />
         <Kpi label="FC media" value={fmt(t.hr)} unit="bpm" sub={isNum(dl.hr) ? `${dl.hr > 0 ? '+' : ''}${dl.hr} vs prec.` : undefined} />
         <Kpi label="Più lunga" value={fmt(t.longest, 1)} unit="km" sub={isNum(dl.longest) ? `${dl.longest > 0 ? '+' : ''}${fmt(dl.longest, 1)} km vs prec.` : undefined} />

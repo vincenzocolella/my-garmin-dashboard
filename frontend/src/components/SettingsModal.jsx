@@ -174,7 +174,7 @@ export function SettingsModal({ settings, onSave, onClose, onImport, onClearCach
                 <option value="standard">Standard: % FCR, max 195, riposo 57</option>
               </select>
             </Field>
-            <Field label="Sensibilità rilevazione malesseri" hint="Alta = segnala anche deviazioni deboli (più falsi allarmi)">
+            <Field label="Sensibilità Radar sintomi" hint="Alta = segnala anche deviazioni deboli (più falsi allarmi)">
               <select className={input} value={draft.illnessSensitivity} onChange={set('illnessSensitivity')}>
                 <option value="bassa">Bassa</option><option value="media">Media</option><option value="alta">Alta</option>
               </select>

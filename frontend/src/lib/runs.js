@@ -1,6 +1,6 @@
 // Detailed single-run analysis and period overview of all runs.
 import { findBlock } from './plan';
-import { addDays, dateRange, diffDays, isNum, linreg, mean, round, sd, sum, weekStart } from './util';
+import { addDays, dateRange, diffDays, fmtH, isNum, linreg, mean, round, sd, sum, weekStart } from './util';
 import { zoneOf } from './zones';
 
 export const runClass = (r) => (r.long ? 'long' : r.hard ? 'quality' : 'easy');
@@ -105,7 +105,7 @@ export function runDetail(a, run) {
   if (comparison?.efPercentile != null) notes.push({ tone: comparison.efPercentile >= 60 ? 'good' : comparison.efPercentile <= 30 ? 'warn' : 'info', text: comparison.efPercentile === 0 ? `Efficienza (velocità/FC) la più bassa tra le tue ${comparison.n} uscite ${CLASS_LABEL[cls].toLowerCase()} degli ultimi 90 giorni.` : comparison.efPercentile === 100 ? `Efficienza (velocità/FC) la migliore tra le tue ${comparison.n} uscite ${CLASS_LABEL[cls].toLowerCase()} degli ultimi 90 giorni.` : `Efficienza (velocità/FC) migliore del ${comparison.efPercentile}% delle tue ${comparison.n} uscite ${CLASS_LABEL[cls].toLowerCase()} degli ultimi 90 giorni.` });
   if (isNum(run.cadence)) notes.push(run.cadence < 165 ? { tone: 'info', text: `Cadenza ${run.cadence} passi/min${strideM ? `, falcata ${strideM} m` : ''}: +5% di cadenza riduce l’impatto su ginocchia e anche.` } : { tone: 'good', text: `Cadenza ${run.cadence} passi/min${strideM ? `, falcata ${strideM} m` : ''}.` });
   if (context) {
-    if ((context.sleepH ?? 9) < 6.5 || (context.hrvPct ?? 0) <= -12) notes.push({ tone: 'warn', text: `Partivi già in debito: ${isNum(context.sleepH) ? `${context.sleepH} h di sonno` : ''}${isNum(context.hrvPct) ? `, HRV ${context.hrvPct > 0 ? '+' : ''}${context.hrvPct}% vs baseline` : ''}. Valuta i numeri di questa corsa con indulgenza.` });
+    if ((context.sleepH ?? 9) < 6.5 || (context.hrvPct ?? 0) <= -12) notes.push({ tone: 'warn', text: `Partivi già in debito: ${isNum(context.sleepH) ? `${fmtH(context.sleepH)} di sonno` : ''}${isNum(context.hrvPct) ? `, HRV ${context.hrvPct > 0 ? '+' : ''}${context.hrvPct}% vs baseline` : ''}. Valuta i numeri di questa corsa con indulgenza.` });
     if (isNum(context.nextHrvPct)) notes.push(context.nextHrvPct <= -12 ? { tone: 'warn', text: `Il giorno dopo HRV ${context.nextHrvPct}% vs baseline: la seduta ti è costata più del previsto, recupera prima della prossima qualità.` } : { tone: 'good', text: `Il giorno dopo HRV ${context.nextHrvPct > 0 ? '+' : ''}${context.nextHrvPct}% vs baseline: carico assorbito bene.` });
   }
   (session?.compliance?.notes ?? []).forEach((n) => notes.push({ ...n, text: `Piano (${session.title}): ${n.text}` }));

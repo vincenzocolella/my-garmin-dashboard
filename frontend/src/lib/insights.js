@@ -1,7 +1,7 @@
 // Heuristic engine: deterministic diagnostics computed from the analytics object.
 // Used when no AI provider is configured, and as instant "first draft" before an AI call.
 import { PLAN_START, RACE_DATE } from './planData';
-import { clamp, diffDays, fmt, fmtDuration, fmtPace, isNum, mean, round, signed } from './util';
+import { clamp, diffDays, fmt, fmtDuration, fmtH, fmtPace, isNum, mean, round, signed } from './util';
 
 export const PERSONAS = {
   quant: { label: 'Analista Quantitativo', short: 'Quant', desc: 'Chirurgico, statistico: delta, z-score, deviazioni standard.' },
@@ -69,7 +69,7 @@ export function findings(a) {
     add({ id: 'rhr', area: 'recovery', sev: r.rhrDelta >= 5 ? 3 : 2, fact: `FC a riposo ${L.rhr} bpm, ${signed(r.rhrDelta, 1)} bpm vs baseline`, advice: 'idratazione, zero alcol, sonno anticipato; valuta segni di malattia', jab: 'Il cuore batte come se avessi fatto festa. Hai fatto festa?', longTerm: 'una FC a riposo in salita è uno dei marker più predittivi di affaticamento sistemico' });
 
   if ((a.sleep.debt7 ?? 0) >= 3)
-    add({ id: 'sleepdebt', area: 'sleep', sev: a.sleep.debt7 >= 6 ? 3 : 2, fact: `debito di sonno 7gg ${fmt(a.sleep.debt7, 1)} h (media ${fmt(a.sleep.avg7, 1)} h vs bisogno ${a.sleep.need} h)`, advice: `anticipa di 45’ l’orario di letto per 4 notti, schermi off 60’ prima`, jab: 'Dormire non è opzionale. Netflix non ti farà correre più veloce.', longTerm: 'il debito cronico riduce sensibilità insulinica, testosterone e consolidamento motorio' });
+    add({ id: 'sleepdebt', area: 'sleep', sev: a.sleep.debt7 >= 6 ? 3 : 2, fact: `debito di sonno 7gg ${fmtH(a.sleep.debt7)} (media ${fmtH(a.sleep.avg7)} vs bisogno ${fmtH(a.sleep.need)})`, advice: `anticipa di 45’ l’orario di letto per 4 notti, schermi off 60’ prima`, jab: 'Dormire non è opzionale. Netflix non ti farà correre più veloce.', longTerm: 'il debito cronico riduce sensibilità insulinica, testosterone e consolidamento motorio' });
   if (isNum(a.sleep.efficiency7) && a.sleep.efficiency7 < 87)
     add({ id: 'sleepeff', area: 'sleep', sev: 1, fact: `efficienza del sonno ${fmt(a.sleep.efficiency7, 1)}% (target > 90%)`, advice: 'camera a 18-19 °C, buio totale, caffeina entro le 14:00', jab: 'Ti giri nel letto più che sul tapis roulant.', longTerm: 'frammentazione = meno sonno profondo = meno GH notturno' });
   if (isNum(a.sleep.deepPct7) && a.sleep.deepPct7 < 13)
@@ -143,7 +143,7 @@ export function cardInsights(a) {
       ? { text: `HRV sotto baseline da 3 giorni consecutivi (${signed(a.hrvTrend.pct3d, 0)}%)${(r.rhrDelta ?? 0) > 2 ? ` con FC riposo +${fmt(r.rhrDelta, 1)} bpm: probabile stress sistemico` : (a.pmc.load7 ?? 0) > (a.pmc.load28avg7 ?? 0) * 1.15 || (a.pmc.acwrPeak14?.value ?? 0) > 1.4 ? ' dopo un blocco di carico elevato: risposta al sovraccarico' : ' nonostante volume stabile: possibile stress extra-sportivo'}.`, tone: 'bad' }
       : { text: `HRV ${fmt(L.hrv)} ms (z ${fmt(r.hrvZ, 2)}), FC riposo ${fmt(L.rhr)} bpm (${signed(r.rhrDelta, 1)} vs baseline).`, tone: (r.hrvZ ?? 0) <= -1 ? 'warn' : 'good' };
   out.sleep = {
-    text: `Debito 7gg ${fmt(a.sleep.debt7, 1)} h · media ${fmt(a.sleep.avg7, 1)} h · efficienza ${fmt(a.sleep.efficiency7, 1)}% · deep ${fmt(a.sleep.deepPct7, 0)}%.`,
+    text: `Debito 7gg ${fmtH(a.sleep.debt7)} · media ${fmtH(a.sleep.avg7)} · efficienza ${fmt(a.sleep.efficiency7, 1)}% · deep ${fmt(a.sleep.deepPct7, 0)}%.`,
     tone: (a.sleep.debt7 ?? 0) >= 6 ? 'bad' : (a.sleep.debt7 ?? 0) >= 3 ? 'warn' : 'good',
   };
   out.ans = intr
@@ -180,7 +180,7 @@ export function cardInsights(a) {
     tone: a.strength.perWeek < 1 ? 'warn' : 'good',
   };
   out.longevity = {
-    text: `Indice ${fmt(a.longevity.score)} da FC riposo ${fmt(a.longevity.averages.rhr, 1)}, HRV ${fmt(a.longevity.averages.hrv, 1)}, sonno ${fmt(a.longevity.averages.sleepH, 1)} h, VO2max ${fmt(a.longevity.averages.vo2max, 1)}.`,
+    text: `Indice ${fmt(a.longevity.score)} da FC riposo ${fmt(a.longevity.averages.rhr, 1)}, HRV ${fmt(a.longevity.averages.hrv, 1)}, sonno ${fmtH(a.longevity.averages.sleepH)}, VO2max ${fmt(a.longevity.averages.vo2max, 1)}.`,
     tone: 'info',
   };
   out.runs = {
@@ -260,7 +260,7 @@ export function bioAuditText(a, persona) {
   if (!diag.length) diag.push('Nessun pattern patologico: sistema autonomico in equilibrio.');
   const presc = [
     (r.hrvZ ?? 0) <= -1 ? 'Allenamento: solo Z1-Z2 o riposo, niente sedute neuromuscolari pesanti.' : 'Allenamento: via libera secondo il piano.',
-    (a.sleep.debt7 ?? 0) >= 3 ? `Stasera a letto entro le 22:45 (+45’), obiettivo ${a.sleep.need} h.` : 'Mantieni l’orario di sonno attuale (±30’).',
+    (a.sleep.debt7 ?? 0) >= 3 ? `Stasera a letto entro le 22:45 (+45’), obiettivo ${fmtH(a.sleep.need)}.` : 'Mantieni l’orario di sonno attuale (±30’).',
     'Luce naturale 10’ entro un’ora dal risveglio; caffeina non oltre le 14:00.',
     a.ans.intraday?.windows.some((w) => w.label.includes('post-prandiale')) ? 'Dopo pranzo: 10’ di camminata, riduci carboidrati raffinati.' : 'Idratazione: 35 ml/kg + elettroliti nei giorni di corsa.',
   ];
@@ -314,7 +314,7 @@ export function chatAnswer(a, question) {
   const z = hrZones(a);
   const paces = trainingPaces(a);
   const issues = [];
-  if ((a.sleep.debt7 ?? 0) >= 4) issues.push(`debito di sonno ${fmt(a.sleep.debt7, 1)} h`);
+  if ((a.sleep.debt7 ?? 0) >= 4) issues.push(`debito di sonno ${fmtH(a.sleep.debt7)}`);
   if ((r.hrvZ ?? 0) <= -1) issues.push(`HRV sotto baseline (z ${fmt(r.hrvZ, 2)})`);
   if ((a.pmc.latest?.acwr ?? 1) > 1.3) issues.push(`ACWR ${fmt(a.pmc.latest.acwr, 2)}`);
   if ((a.pmc.latest?.tsb ?? 0) < -25) issues.push(`TSB ${fmt(a.pmc.latest.tsb, 1)}`);
@@ -326,13 +326,13 @@ export function chatAnswer(a, question) {
     const verdict = issues.length >= 3 || (r.score ?? 80) < 50 || a.illness?.current?.active ? 'No' : issues.length ? 'Sì, con condizioni' : 'Sì';
     return [
       `${verdict}.`,
-      issues.length ? `Fattori limitanti: ${issues.join('; ')}.` : `Readiness ${fmt(r.score)}, TSB ${fmt(a.pmc.latest?.tsb, 1)}, sonno medio ${fmt(a.sleep.avg7, 1)} h: semaforo verde.`,
+      issues.length ? `Fattori limitanti: ${issues.join('; ')}.` : `Readiness ${fmt(r.score)}, TSB ${fmt(a.pmc.latest?.tsb, 1)}, sonno medio ${fmtH(a.sleep.avg7)}: semaforo verde.`,
       verdict === 'No' ? `Alternativa: easy ${Math.min(km ?? 10, 10)} km sotto ${z.z2Top} bpm e rivaluta tra 48 h.` : `Esecuzione: ${paces ? `${fmtPace(paces.long)}/km` : 'ritmo conversazionale'}, FC < ${z.z2Top} bpm per i primi 2/3, 30-60 g di carboidrati/ora oltre i 75’.`,
       '(motore euristico: configura un provider AI per risposte libere)',
     ].join('\n');
   }
   if (/sonn|dorm|sleep|letto/.test(q))
-    return `Ultimi 7 giorni: media ${fmt(a.sleep.avg7, 1)} h, debito ${fmt(a.sleep.debt7, 1)} h, efficienza ${fmt(a.sleep.efficiency7, 1)}%, deep ${fmt(a.sleep.deepPct7, 0)}%, REM ${fmt(a.sleep.remPct7, 0)}%. ${(a.sleep.debt7 ?? 0) >= 3 ? 'Recupera anticipando l’orario di letto, non con sonnellini lunghi.' : 'Quantità adeguata.'}`;
+    return `Ultimi 7 giorni: media ${fmtH(a.sleep.avg7)}, debito ${fmtH(a.sleep.debt7)}, efficienza ${fmt(a.sleep.efficiency7, 1)}%, deep ${fmt(a.sleep.deepPct7, 0)}%, REM ${fmt(a.sleep.remPct7, 0)}%. ${(a.sleep.debt7 ?? 0) >= 3 ? 'Recupera anticipando l’orario di letto, non con sonnellini lunghi.' : 'Quantità adeguata.'}`;
   if (/pesi|forza|palestra|squat|leg|gamb/.test(q)) return hybridText(a, 'quant');
   if (/gara|tempo|previs|mezza|maratona|10k|5k/.test(q))
     return a.race.predictions.map((p) => `${p.label}: ${fmtDuration(p.model)} (${fmtPace(p.pace)}/km)${p.garmin ? ` · Garmin ${fmtDuration(p.garmin)}` : ''}`).join('\n') + `\nBasato su ${a.race.vdotSource}${isNum(a.race.vo2max) ? ` ${fmt(a.race.vo2max, 1)}` : ''} e ${fmt(a.race.weeklyKm, 1)} km/sett.`;
@@ -346,8 +346,8 @@ export function sleepCoachText(a, persona) {
   const ln = s.lastNight;
   const lines = [openers[persona](a, (s.debt7 ?? 0) >= 6 ? 3 : (s.debt7 ?? 0) >= 3 ? 2 : 0), ''];
   lines.push('ARCHITETTURA');
-  if (ln) lines.push(`• Stanotte ${fmt(ln.hours, 1)} h, score ${fmt(ln.score)}: profondo ${fmt((ln.deep / ln.total) * 100, 0)}%, REM ${fmt((ln.rem / ln.total) * 100, 0)}%, veglia ${fmt((ln.awake ?? 0) / 60, 0)} min.`);
-  lines.push(`• Media 7 notti: ${fmt(s.avg7, 1)} h, efficienza ${fmt(s.efficiency7, 1)}%, profondo ${fmt(s.deepPct7, 0)}% (ottimale 15-25%), REM ${fmt(s.remPct7, 0)}% (ottimale 20-25%).`);
+  if (ln) lines.push(`• Stanotte ${fmtH(ln.hours)}, score ${fmt(ln.score)}: profondo ${fmt((ln.deep / ln.total) * 100, 0)}%, REM ${fmt((ln.rem / ln.total) * 100, 0)}%, veglia ${fmt((ln.awake ?? 0) / 60, 0)} min.`);
+  lines.push(`• Media 7 notti: ${fmtH(s.avg7)}, efficienza ${fmt(s.efficiency7, 1)}%, profondo ${fmt(s.deepPct7, 0)}% (ottimale 15-25%), REM ${fmt(s.remPct7, 0)}% (ottimale 20-25%).`);
   lines.push('', 'REGOLARITÀ');
   lines.push(`• A letto in media alle ${s.bedtimeAvg ?? '—'} (± ${fmt(s.bedtimeSdMin)} min), sveglia alle ${s.wakeAvg ?? '—'} (± ${fmt(s.wakeSdMin)} min).${(s.bedtimeSdMin ?? 0) > 45 ? persona === 'sergeant' ? ' Orari da studente fuori sede: il tuo orologio biologico non sa più che fuso orario è.' : ' Variabilità oltre 45’: il ritmo circadiano ne risente più della durata stessa.' : ' Regolarità buona.'}`);
   if (s.shortNights14) lines.push(`• ${s.shortNights14} notti sotto le 6 h nelle ultime 2 settimane.`);
@@ -365,7 +365,7 @@ export function sleepCoachText(a, persona) {
   const bed = wakeH - s.need - 0.25;
   const bedClock = `${String(Math.floor((bed + 24) % 24)).padStart(2, '0')}:${String(Math.round(((bed % 1) + 1) % 1 * 60) % 60).padStart(2, '0')}`;
   lines.push('', 'PRESCRIZIONI');
-  lines.push(`• A letto entro le ${bedClock} per coprire ${s.need} h con la tua sveglia media${(s.debt7 ?? 0) >= 3 ? `; per 4 notti anticipa di altri 30’ per ripagare ${fmt(s.debt7, 1)} h di debito` : ''}.`);
+  lines.push(`• A letto entro le ${bedClock} per coprire ${fmtH(s.need)} con la tua sveglia media${(s.debt7 ?? 0) >= 3 ? `; per 4 notti anticipa di altri 30’ per ripagare ${fmtH(s.debt7)} di debito` : ''}.`);
   lines.push('• Stessa sveglia anche nel weekend (± 30’), luce naturale entro 30’ dal risveglio.');
   lines.push('• Caffeina entro le 14:00, alcol zero nelle 3 h prima di dormire, camera 18-19 °C e buio totale.');
   if ((s.deepPct7 ?? 20) < 15 || late.length) lines.push('• Sedute intense entro le 19:00; dopo, solo mobilità o upper body leggero.');
@@ -450,7 +450,9 @@ export function extraCardInsights(a) {
     })(),
     illnessNow: il.current.active
       ? { text: `Segnali attivi: ${(il.current.today?.signals ?? []).join(', ') || 'deviazione autonomica'}. Niente intensità oggi.`, tone: 'bad' }
-      : { text: `Nessun segnale attivo · ${il.stats.healthyStreak} giorni consecutivi nella norma.`, tone: 'good' },
+      : (il.current.today?.index ?? 0) >= 50
+        ? { text: `Da monitorare: ${(il.current.today?.signals ?? []).join(', ')}, ma senza il quadro tipico di malessere (FC riposo ↑ con HRV ↓).`, tone: 'warn' }
+        : { text: `Nessun segnale attivo · ${il.stats.healthyStreak} giorni consecutivi nella norma.`, tone: 'good' },
     illnessTimeline: { text: `${il.stats.count} episodi in ${il.stats.daysScanned} giorni analizzati${il.stats.illness ? `, di cui ${il.stats.illness} compatibili con malattia` : ''}.`, tone: il.stats.illness ? 'warn' : 'info' },
     illnessPatterns: { text: il.stats.count ? `Trigger: ${il.stats.afterHighLoad} dopo picchi di carico, ${il.stats.afterShortSleep} dopo notti corte; rientro medio ${fmt(il.stats.avgRecovery, 1)} giorni.` : 'Nessun episodio: nessun pattern da analizzare.', tone: 'info' },
   };

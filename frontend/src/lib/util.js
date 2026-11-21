@@ -75,7 +75,17 @@ export function fmtDuration(sec) {
   const s = Math.round(sec % 60);
   return h ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` : `${m}:${String(s).padStart(2, '0')}`;
 }
-export const fmtHours = (sec) => (isNum(sec) ? `${Math.floor(sec / 3600)}h${String(Math.round((sec % 3600) / 60)).padStart(2, '0')}` : '—');
+/** Hours as "7h10" / "8h" / "48 min", rounded to the minute (never decimal hours). `signed` adds + for positive deltas. */
+export function fmtH(hours, { signed: withSign = false } = {}) {
+  if (!isNum(hours)) return '—';
+  const sign = hours < 0 ? '−' : withSign && hours > 0 ? '+' : '';
+  const mins = Math.round(Math.abs(hours) * 60);
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (h === 0) return `${sign}${m} min`;
+  return `${sign}${h}h${m ? String(m).padStart(2, '0') : ''}`;
+}
+export const fmtHours = (sec) => (isNum(sec) ? fmtH(sec / 3600) : '—');
 
 /** Deterministic PRNG so demo scenarios are stable between reloads. */
 export function rng(seed) {

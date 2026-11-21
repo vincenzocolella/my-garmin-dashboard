@@ -1,4 +1,4 @@
-import { Bot, Dna, Dumbbell, Footprints, Loader2, MessageSquare, RefreshCw, Settings, Stethoscope, Target, Zap } from 'lucide-react';
+import { Bot, Dna, Dumbbell, Footprints, Loader2, MessageSquare, RefreshCw, Settings, Target, Zap } from 'lucide-react';
 import { SCENARIOS } from '../lib/demo';
 
 export const TABS = [
@@ -6,7 +6,6 @@ export const TABS = [
   { key: 'plan', label: 'Piano Sub-2', icon: Target },
   { key: 'running', label: 'Corsa', icon: Footprints },
   { key: 'strength', label: 'Forza', icon: Dumbbell },
-  { key: 'wellness', label: 'Malesseri', icon: Stethoscope },
 ];
 export const RANGES = [7, 14, 30, 90];
 

@@ -1,5 +1,5 @@
 import { apiFetch } from './api';
-import { fmtDuration, fmtPace, round } from './util';
+import { fmtDuration, fmtH, fmtPace, round } from './util';
 import { overtrainingRisk } from './insights';
 
 export const PROVIDERS = {
@@ -31,9 +31,9 @@ export function buildContext(a) {
     sorgente: a.scenario ? `${a.source}:${a.scenario}` : a.source,
     profilo: { fc_max: a.profile.maxHr, fc_riposo: a.profile.restHr, vo2max: a.race.vo2max, bisogno_sonno_h: a.sleep.need },
     readiness: { score: r.score, delta_vs_media30: r.delta, hrv_z: round(r.hrvZ, 2), fc_riposo_delta: round(r.rhrDelta, 1), componenti: { hrv: r.hrv, fc_riposo: r.rhr, sonno: r.sleep, stress: r.stress, body_battery: r.bb } },
-    oggi_vitali: { hrv_ms: a.latest.hrv, hrv_status: a.latest.hrvStatus, fc_riposo: a.latest.rhr, stress_medio: a.latest.stress, bb_max: a.latest.bbMax, bb_min: a.latest.bbMin, passi: a.latest.steps, sonno_h: a.sleep.lastNight?.hours, sonno_score: a.sleep.lastNight?.score },
-    longevity: { score: a.longevity.score, medie_30gg: a.longevity.averages },
-    sonno: { media7_h: a.sleep.avg7, debito7_h: a.sleep.debt7, efficienza7_pct: a.sleep.efficiency7, deep7_pct: a.sleep.deepPct7, rem7_pct: a.sleep.remPct7, score7: a.sleep.score7 },
+    oggi_vitali: { hrv_ms: a.latest.hrv, hrv_status: a.latest.hrvStatus, fc_riposo: a.latest.rhr, stress_medio: a.latest.stress, bb_max: a.latest.bbMax, bb_min: a.latest.bbMin, passi: a.latest.steps, sonno: fmtH(a.sleep.lastNight?.hours), sonno_score: a.sleep.lastNight?.score },
+    longevity: { score: a.longevity.score, medie_30gg: { ...a.longevity.averages, sleepH: fmtH(a.longevity.averages.sleepH) } },
+    sonno: { media7: fmtH(a.sleep.avg7), debito7: fmtH(a.sleep.debt7), efficienza7_pct: a.sleep.efficiency7, deep7_pct: a.sleep.deepPct7, rem7_pct: a.sleep.remPct7, score7: a.sleep.score7 },
     sistema_nervoso_oggi: intr ? { stress_notturno: intr.nightStress, ricarica_bb_notte: intr.bbGain, stress_medio_veglia: intr.dayMean, finestre: intr.windows.map((w) => `${w.label} ${intr.rows[w.from].label}-${intr.rows[w.to].label}`) } : null,
     carico: p ? { ctl: p.ctl, atl: p.atl, tsb: p.tsb, acwr: p.acwr, zona_tsb: a.pmc.zone?.label, ramp_rate_ctl_sett: a.pmc.rampRate } : null,
     corsa: {
@@ -57,16 +57,16 @@ export function buildContext(a) {
       attivo_ora: a.illness.current.active,
       segnali_oggi: a.illness.current.today?.signals,
       giorni_analizzati: a.illness.stats.daysScanned,
-      episodi: a.illness.episodes.slice(0, 8).map((e) => ({ dal: e.start, al: e.end, giorni: e.days, tipo: e.label, confidenza: e.confidence, fc_riposo_max_delta: e.markers.rhr, hrv_min_pct: e.markers.hrv, carico_prima_x: e.loadRatio, sonno_prima_delta_h: e.sleepBefore, sedute_dure_durante: e.hardDuring.length, rientro_giorni: e.recoveryDays })),
+      episodi: a.illness.episodes.slice(0, 8).map((e) => ({ dal: e.start, al: e.end, giorni: e.days, tipo: e.label, confidenza: e.confidence, fc_riposo_max_delta: e.markers.rhr, hrv_min_pct: e.markers.hrv, carico_prima_x: e.loadRatio, sonno_prima_delta: fmtH(e.sleepBefore, { signed: true }), sedute_dure_durante: e.hardDuring.length, rientro_giorni: e.recoveryDays })),
     },
     piano_mezza: planContext(a.plan),
     zone_fc: { fonte: a.hrZoneCfg.label, zone_bpm: a.hrZoneCfg.ranges.map(([lo, hi], i) => `Z${i + 1} ${lo}-${hi}`) },
     serie_giornaliere: {
-      colonne: ['data', 'hrv', 'fc_riposo', 'sonno_h', 'sonno_score', 'stress', 'bb_max', 'carico'],
+      colonne: ['data', 'hrv', 'fc_riposo', 'sonno', 'sonno_score', 'stress', 'bb_max', 'carico'],
       righe: a.hrvRhr.map((d, i) => {
         const s = a.sleep.rows[i];
         const day = a.ans.daily[i];
-        return [d.date, d.hrv, d.rhr, s?.total, s?.score, day?.stress, day?.bbMax, round(loadByDate.get(d.date) ?? 0)];
+        return [d.date, d.hrv, d.rhr, fmtH(s?.total), s?.score, day?.stress, day?.bbMax, round(loadByDate.get(d.date) ?? 0)];
       }),
     },
     attivita: a.activities
@@ -105,7 +105,7 @@ function planContext(p) {
 // --------------------------------------------------------------------- prompts
 const BASE = `Sei l’assistente di Garmin Dashboard, esperto di dati Garmin, fisiologia dello sport e allenamento di corsa e forza.
 Rispondi SEMPRE in italiano. Basati solo sui dati JSON forniti: se un dato manca dillo, non inventarlo.
-Cita numeri precisi (con unità). Non fare diagnosi mediche: se i dati suggeriscono un problema di salute, consiglia di consultare un medico.
+Cita numeri precisi (con unità). Scrivi sempre le durate in ore e minuti (es. 7h10, 45 min), mai in ore decimali. Non fare diagnosi mediche: se i dati suggeriscono un problema di salute, consiglia di consultare un medico.
 Formato: testo semplice, elenchi con "•", niente markdown con asterischi o titoli con #.`;
 
 const PERSONA_PROMPTS = {
@@ -134,7 +134,7 @@ export function taskPrompt(task, a, extra = {}) {
   const ctx = JSON.stringify(buildContext(a));
   if (task === 'insights')
     return `Per ciascuna card della dashboard genera UNA frase diagnostica (max 160 caratteri), specifica e numerica, come "HRV in calo del 14% per 3 giorni consecutivi nonostante volume stabile: possibile stress extra-sportivo".
-Card: readiness (readiness score e anelli), longevity (indice longevità), hrvRhr (HRV e FC riposo vs baseline), sleep (architettura sonno e debito), ans (stress intraday vs Body Battery), pmc (CTL/ATL/TSB/ACWR), ef (efficienza aerobica e decoupling), zones (distribuzione zone 80/20), race (previsioni gara e VO2max), runs (ultime corse), hybrid (interferenza corsa/pesi), volume (volume e tonnellaggio forza), planOverview (andamento piano mezza sub-2), planWeek (sessioni di questa settimana), planGates (controlli A/B/C), illnessNow (segnali di malessere oggi), illnessTimeline (storico malesseri), illnessPatterns (trigger dei malesseri).
+Card: readiness (readiness score e anelli), longevity (indice longevità), hrvRhr (HRV e FC riposo vs baseline), sleep (architettura sonno e debito), ans (stress intraday vs Body Battery), pmc (CTL/ATL/TSB/ACWR), ef (efficienza aerobica e decoupling), zones (distribuzione zone 80/20), race (previsioni gara e VO2max), runs (ultime corse), hybrid (interferenza corsa/pesi), volume (volume e tonnellaggio forza), planOverview (andamento piano mezza sub-2), planWeek (sessioni di questa settimana), planGates (controlli A/B/C), illnessNow (radar sintomi: segnali di malessere oggi), illnessTimeline (radar sintomi: storico), illnessPatterns (radar sintomi: trigger).
 Rispondi SOLO con un oggetto JSON con esattamente queste chiavi: ${INSIGHT_KEYS.join(', ')}.\n\nDATI:\n${ctx}`;
   if (task === 'chat') {
     const history = (extra.history ?? []).slice(-8).map((m) => `${m.role === 'user' ? 'UTENTE' : 'ASSISTENTE'}: ${m.text}`).join('\n');
