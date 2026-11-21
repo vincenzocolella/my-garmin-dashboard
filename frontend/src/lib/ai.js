@@ -60,6 +60,7 @@ export function buildContext(a) {
       episodi: a.illness.episodes.slice(0, 8).map((e) => ({ dal: e.start, al: e.end, giorni: e.days, tipo: e.label, confidenza: e.confidence, fc_riposo_max_delta: e.markers.rhr, hrv_min_pct: e.markers.hrv, carico_prima_x: e.loadRatio, sonno_prima_delta_h: e.sleepBefore, sedute_dure_durante: e.hardDuring.length, rientro_giorni: e.recoveryDays })),
     },
     piano_mezza: planContext(a.plan),
+    zone_fc: { fonte: a.hrZoneCfg.label, zone_bpm: a.hrZoneCfg.ranges.map(([lo, hi], i) => `Z${i + 1} ${lo}-${hi}`), avvisi: (a.zoneAlerts ?? []).map((z) => `${z.title}: ${z.text}`) },
     serie_giornaliere: {
       colonne: ['data', 'hrv', 'fc_riposo', 'sonno_h', 'sonno_score', 'stress', 'bb_max', 'carico'],
       righe: a.hrvRhr.map((d, i) => {
@@ -119,7 +120,7 @@ const TASKS = {
   runningCoach: 'AI RUNNING COACH: analizza il macro-ciclo (PMC, ACWR, distribuzione zone 80/20, Efficiency Factor, decoupling). Segnala se le corse facili sono troppo forti, stima il rischio di overtraining e genera la prossima sessione ideale con passi (min/km) e FC precisi. Massimo 250 parole.',
   sleep: 'AI SLEEP COACH: analizza architettura del sonno (profondo, REM, veglia), debito, regolarità degli orari, legame tra ore di sonno e HRV, effetto di allenamenti serali e stress notturno. Chiudi con prescrizioni concrete e personalizzate (orario di letto preciso calcolato dalla sveglia media). Massimo 230 parole.',
   illness: 'AI HEALTH DETECTIVE: analizza gli episodi di malessere rilevati (malattia, sovraccarico, debito di sonno, stress), il loro contesto (carico e sonno prima, allenamenti durante, tempi di rientro) e lo stato attuale. Individua i trigger ricorrenti e dai un protocollo di prevenzione e di rientro. Ricorda che è un’analisi statistica e non una diagnosi. Massimo 230 parole.',
-  plan: 'AI PLAN COACH del piano mezza maratona sub-2:00: valuta la settimana corrente e le sessioni abbinate automaticamente (aderenza a distanza, ritmi dei blocchi e FC di controllo), decidi se fare la seconda uscita facoltativa in base a readiness, carico e malesseri, applica le regole del piano (chiave saltata → ripeti la settimana, 2 saltate → rivedi obiettivo B/C, niente gambe pesanti nelle 48 h prima delle chiavi, gel dai lunghi della settimana 6, FC riposo +5 per 3 giorni → alleggerisci) e adatta i consigli ai dati reali. Indica giorno, ritmi e FC della prossima uscita. Massimo 250 parole.',
+  plan: 'AI PLAN COACH del piano mezza maratona sub-2:00: valuta la settimana corrente e le sessioni abbinate automaticamente (aderenza a distanza, ritmi dei blocchi e FC di controllo), decidi se fare la seconda uscita facoltativa in base a readiness, carico e malesseri, segnala se le zone FC vanno aggiornate (vedi zone_fc.avvisi), applica le regole del piano (chiave saltata → ripeti la settimana, 2 saltate → rivedi obiettivo B/C, niente gambe pesanti nelle 48 h prima delle chiavi, gel dai lunghi della settimana 6, FC riposo +5 per 3 giorni → alleggerisci) e adatta i consigli ai dati reali. Indica giorno, ritmi e FC della prossima uscita. Massimo 250 parole.',
   hybrid: 'AI HYBRID STRATEGIST: valuta l’equilibrio tra forza e resistenza, i conflitti di interferenza e quando inserire le sedute di pesi rispetto ai lunghi e all’andamento HRV. Proponi una settimana tipo. Massimo 220 parole.',
 };
 

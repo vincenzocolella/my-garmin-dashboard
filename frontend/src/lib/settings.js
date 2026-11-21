@@ -18,6 +18,7 @@ export const DEFAULT_SETTINGS = {
   restHr: '',
   sleepNeedH: 8,
   illnessSensitivity: 'media',
+  zoneSource: 'auto', // 'auto' = Garmin Connect when available, else standard | 'standard'
 };
 
 function read(key, fallback) {

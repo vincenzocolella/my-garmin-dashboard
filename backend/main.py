@@ -346,6 +346,32 @@ def load_activities(start: date, end: date) -> list[dict]:
     return acts
 
 
+def _hr_zones(raw) -> dict | None:
+    """Heart-rate zones configured in Garmin Connect (running profile, else default)."""
+    items = raw if isinstance(raw, list) else [raw] if isinstance(raw, dict) else []
+    z = next((x for x in items if x.get("sport") == "RUNNING"), None) or next((x for x in items if x.get("sport") == "DEFAULT"), None)
+    if not z:
+        return None
+    floors = [z.get(f"zone{i}Floor") for i in range(1, 6)]
+    if not all(isinstance(f, (int, float)) for f in floors):
+        return None
+    return {
+        "sport": z.get("sport"),
+        "method": z.get("trainingMethod"),
+        "maxHr": z.get("maxHeartRateUsed"),
+        "restHr": z.get("restingHeartRateUsed"),
+        "lthr": z.get("lactateThresholdHeartRateUsed"),
+        "floors": [round(f) for f in floors],
+    }
+
+
+def _lactate(raw) -> dict | None:
+    sh = (raw or {}).get("speed_and_heart_rate") or {}
+    if not sh.get("heartRate"):
+        return None
+    return {"hr": sh.get("heartRate"), "speed": sh.get("speed"), "date": sh.get("calendarDate")}
+
+
 def load_profile(d: date) -> dict:
     ds = d.isoformat()
 
@@ -359,6 +385,8 @@ def load_profile(d: date) -> dict:
         return {
             "vo2max": _dig(mm, "generic", "vo2MaxPreciseValue") or _dig(mm, "generic", "vo2MaxValue"),
             "racePredictions": preds if any(preds.values()) else None,
+            "hrZones": _hr_zones(soft_call(lambda g: g.get_heart_rate_zones())),
+            "lactateThreshold": _lactate(soft_call(lambda g: g.get_lactate_threshold())),
         }
 
     return cached(f"profile:{ds}", fetch, 3 * 3600)

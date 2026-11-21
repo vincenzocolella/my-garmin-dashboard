@@ -164,10 +164,16 @@ export function SettingsModal({ settings, onSave, onClose, onImport, onClearCach
 
           <Section title="Profilo atleta">
             <div className="grid gap-3 sm:grid-cols-3">
-              <Field label="FC max" hint="vuoto = max osservata"><input className={input} type="number" value={draft.maxHr} onChange={set('maxHr')} placeholder="auto" /></Field>
-              <Field label="FC riposo" hint="vuoto = media 30gg"><input className={input} type="number" value={draft.restHr} onChange={set('restHr')} placeholder="auto" /></Field>
+              <Field label="FC max" hint="vuoto = dalle zone"><input className={input} type="number" value={draft.maxHr} onChange={set('maxHr')} placeholder="auto" /></Field>
+              <Field label="FC riposo" hint="vuoto = dalle zone"><input className={input} type="number" value={draft.restHr} onChange={set('restHr')} placeholder="auto" /></Field>
               <Field label="Bisogno sonno (h)"><input className={input} type="number" step="0.25" value={draft.sleepNeedH} onChange={set('sleepNeedH')} /></Field>
             </div>
+            <Field label="Zone FC" hint="Auto = lette da Garmin Connect a ogni sincronizzazione; FC max/riposo qui sopra, se compilate, hanno la precedenza nei calcoli">
+              <select className={input} value={draft.zoneSource} onChange={set('zoneSource')}>
+                <option value="auto">Automatiche da Garmin (standard se non disponibili)</option>
+                <option value="standard">Standard: % FCR, max 195, riposo 57</option>
+              </select>
+            </Field>
             <Field label="Sensibilità rilevazione malesseri" hint="Alta = segnala anche deviazioni deboli (più falsi allarmi)">
               <select className={input} value={draft.illnessSensitivity} onChange={set('illnessSensitivity')}>
                 <option value="bassa">Bassa</option><option value="media">Media</option><option value="alta">Alta</option>

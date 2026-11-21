@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { BookOpen, CalendarCheck, ChevronDown, Flag, Gauge, ListChecks, Medal, Target } from 'lucide-react';
+import { BookOpen, CalendarCheck, ChevronDown, Flag, Gauge, HeartPulse, ListChecks, Medal, Target } from 'lucide-react';
 import { AIBox, Card, Kpi, TONE } from '../components/ui';
 import { planCoachText } from '../lib/insights';
 import { BASELINES, RACE_DATE, RACE_TIPS, RULES } from '../lib/plan';
 import { HR_ZONES, PACE_TABLE, PASSAGES, RACE_GOALS, TYPE_COLORS, TYPE_LABELS, ZONE_COLORS } from '../lib/planData';
 import { fmt, fmtDay, fmtDuration, fmtPace } from '../lib/util';
+import { zoneSummary } from '../lib/zones';
 
 const STATE = {
   done: { icon: '✓', label: 'Fatta', cls: 'text-emerald border-emerald/50 bg-emerald/10' },
@@ -139,11 +140,42 @@ function Gates({ a }) {
   );
 }
 
-function PacesZones({ a }) {
-  const { maxHr, restHr } = a.profile;
-  const pctRange = (pct) => pct.match(/(\d+)[–-](\d+)%/)?.slice(1).map(Number);
+function ZoneAlert({ a }) {
+  const alerts = a.zoneAlerts ?? [];
+  const warn = alerts.filter((x) => x.tone === 'warn');
+  const [open, setOpen] = useState(warn.length > 0);
+  const tone = warn.length ? 'warn' : 'good';
   return (
-    <Card title="Ritmi e zone" subtitle="Ritmi sul Garmin calibrati sul tuo 10 km in 53:27" icon={ListChecks} info="planZones">
+    <section className={`glass min-w-0 rounded-xl border-l-2 ${TONE[tone].border} px-5 py-3 lg:col-span-3`}>
+      <button type="button" onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-3 text-left">
+        <HeartPulse size={16} className={`shrink-0 ${TONE[tone].text}`} />
+        <span className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-200">Zone FC</span>
+        <span className="min-w-0 flex-1 truncate text-xs text-gray-400">
+          {warn.length ? `${warn.length} ${warn.length === 1 ? 'motivo' : 'motivi'} per aggiornare le zone: ${warn.map((x) => x.title.toLowerCase()).join(' · ')}` : `Zone coerenti con i tuoi dati · ${a.hrZoneCfg.label}`}
+        </span>
+        <ChevronDown size={14} className={`shrink-0 text-gray-500 transition ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="mt-3 space-y-2">
+          {alerts.map((x) => (
+            <div key={x.title} className={`rounded-md border-l-2 ${TONE[x.tone].border} bg-void/60 px-3 py-2 text-xs leading-relaxed text-gray-300`}>
+              <b className={TONE[x.tone].text}>{x.title}</b>
+              {x.action && <span className="num ml-2 rounded border border-edge px-1.5 py-0.5 text-[10px] text-gray-200">{x.action}</span>}
+              <div className="mt-0.5">{x.text}</div>
+            </div>
+          ))}
+          {!alerts.length && <p className="text-xs text-gray-500">Nessun segnale che le zone siano da aggiornare. Ricontrollo a ogni sincronizzazione.</p>}
+          <p className="text-[10px] text-gray-600">Le zone si aggiornano da sole quando le cambi in Garmin Connect (app → Impostazioni utente → Zone FC).</p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function PacesZones({ a }) {
+  const cfg = a.hrZoneCfg;
+  return (
+    <Card title="Ritmi e zone" subtitle={`Zone attive: ${cfg.label}`} icon={ListChecks} info="planZones">
       <table className="w-full text-xs">
         <tbody>
           {PACE_TABLE.map((r) => (
@@ -155,21 +187,18 @@ function PacesZones({ a }) {
           ))}
         </tbody>
       </table>
-      <div className="mt-4 text-[10px] uppercase tracking-[0.16em] text-gray-500">Zone FC · piano vs tuoi dati Garmin ({maxHr}/{restHr})</div>
+      <div className="mt-4 text-[10px] uppercase tracking-[0.16em] text-gray-500">Zone FC · attive vs piano scritto</div>
       <table className="mt-1 w-full text-xs">
+        <thead><tr className="text-left text-[10px] text-gray-500"><th className="py-1">Zona</th><th>{cfg.methodLabel}</th><th>Tue (bpm)</th><th>Piano</th></tr></thead>
         <tbody>
-          {HR_ZONES.map((z) => {
-            const pr = pctRange(z.pct.includes('%') ? z.pct.replace(' FCR', '') : '');
-            const g = pr ? `${Math.round(restHr + (pr[0] / 100) * (maxHr - restHr))}–${Math.round(restHr + (pr[1] / 100) * (maxHr - restHr))}` : '—';
-            return (
-              <tr key={z.z} className="border-t border-edge">
-                <td className="py-1.5 font-bold" style={{ color: ZONE_COLORS[z.z] }}>{z.z}</td>
-                <td className="num text-gray-200">{z.bpm}</td>
-                <td className="num text-cyan">{g}</td>
-                <td className="text-gray-500">{z.use}</td>
-              </tr>
-            );
-          })}
+          {zoneSummary(cfg).map((z, i) => (
+            <tr key={z.z} className="border-t border-edge">
+              <td className="py-1.5"><b style={{ color: ZONE_COLORS[z.z] }}>{z.z}</b> <span className="text-gray-400">{z.name}</span></td>
+              <td className="num text-gray-500">{z.pct}</td>
+              <td className="num font-semibold text-cyan">{z.lo}–{z.hi}</td>
+              <td className="num text-gray-500">{HR_ZONES[i]?.bpm}</td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </Card>
@@ -256,6 +285,7 @@ function Rules() {
 export function PlanTab({ a }) {
   return (
     <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+      <ZoneAlert a={a} />
       <Overview a={a} />
       <ThisWeek a={a} />
       <AIBox title="AI Plan Coach" icon={Target} task="plan" heuristic={planCoachText} info="planWeek" />

@@ -3,6 +3,7 @@ import {
 } from './util';
 import { detectIllness } from './illness';
 import { planStatus } from './plan';
+import { zoneAlerts, zoneConfig, zoneOf } from './zones';
 
 /** Strength sessions feed the PMC with half of their session-RPE load (neuromuscular fatigue is only partly systemic). */
 const PMC_STRENGTH_FACTOR = 0.5;
@@ -70,8 +71,7 @@ export function normalizeActivities(dataset, overrides = {}) {
 function estimateZones(a, prof) {
   if (a.zones?.some((z) => z > 0)) return a.zones;
   if (!isNum(a.avgHr) || !a.duration) return null;
-  const pct = a.avgHr / prof.maxHr;
-  const z = pct < 0.6 ? 0 : pct < 0.7 ? 1 : pct < 0.8 ? 2 : pct < 0.9 ? 3 : 4;
+  const z = zoneOf(a.avgHr, prof.zones) - 1;
   return [0, 1, 2, 3, 4].map((i) => (i === z ? a.duration : 0));
 }
 
@@ -126,12 +126,12 @@ export function computeAnalytics(dataset, { rangeDays = 30, settings = {}, overr
 
   // ---- HR profile
   const rawActs = normalizeActivities(dataset, overrides);
-  const observedMax = Math.max(0, ...rawActs.map((a) => a.maxHr ?? 0));
-  const recentRhr = mean(rows.slice(-30).map((r) => r.rhr));
+  const hrZoneCfg = zoneConfig(dataset, settings);
   const prof = {
-    maxHr: Number(settings.maxHr) || (observedMax >= 150 && observedMax <= 225 ? observedMax : 190),
-    restHr: Number(settings.restHr) || (isNum(recentRhr) ? Math.round(recentRhr) : 55),
-    maxHrSource: Number(settings.maxHr) ? 'manuale' : observedMax >= 150 ? 'max osservata' : 'default',
+    maxHr: Number(settings.maxHr) || hrZoneCfg.maxHr,
+    restHr: Number(settings.restHr) || hrZoneCfg.restHr,
+    maxHrSource: Number(settings.maxHr) ? 'manuale' : hrZoneCfg.source === 'garmin' ? 'Garmin Connect' : 'standard',
+    zones: hrZoneCfg,
   };
   const acts = rawActs.map((a) => enrich(a, prof));
   const actsInRange = acts.filter((a) => inRange(a.date));
@@ -392,7 +392,7 @@ export function computeAnalytics(dataset, { rangeDays = 30, settings = {}, overr
   const illness = detectIllness(rows, acts, { sensitivity: settings.illnessSensitivity, today });
 
   const result = {
-    today, rangeStart, rangeDays, source: dataset.source, scenario: dataset.scenario, illness,
+    today, rangeStart, rangeDays, source: dataset.source, scenario: dataset.scenario, illness, hrZoneCfg,
     profile: prof,
     latest, latestDate: latest.date,
     readiness, longevity, hrvRhr, hrvTrend, sleep, ans, pmc,
@@ -405,6 +405,7 @@ export function computeAnalytics(dataset, { rangeDays = 30, settings = {}, overr
     },
   };
   result.plan = planStatus(result);
+  result.zoneAlerts = zoneAlerts(result, dataset);
   return result;
 }
 

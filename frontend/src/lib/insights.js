@@ -14,9 +14,8 @@ const toneOf = (sev) => (sev >= 3 ? 'bad' : sev === 2 ? 'warn' : sev === 1 ? 'in
 
 // --------------------------------------------------------------------- derived helpers
 export function hrZones(a) {
-  const { restHr: r, maxHr: m } = a.profile;
-  const at = (p) => Math.round(r + p * (m - r));
-  return { z2Top: at(0.7), z3Top: at(0.8), threshold: at(0.88) };
+  const f = a.hrZoneCfg.floors; // Z1..Z5 lower bounds
+  return { z2Top: f[2] - 1, z3Top: f[3] - 1, threshold: f[4] - 1 };
 }
 
 export function trainingPaces(a) {
@@ -434,8 +433,8 @@ export function planCoachText(a, persona) {
   if (next) lines.push(`• Prossimo controllo: settimana ${next.week} (${next.when}). A se ${next.a}.`);
   const graded = p.gates.filter((g) => g.grade);
   if (graded.length) lines.push(`• Controlli: ${graded.map((g) => `sett. ${g.week} → ${g.grade}`).join(', ')}.`);
-  if (Math.abs(a.profile.restHr - 57) >= 3 || Math.abs(a.profile.maxHr - 195) >= 4)
-    lines.push(`• Le zone del piano assumono FC max 195 e riposo 57; Garmin dice FC max ${a.profile.maxHr} (${a.profile.maxHrSource}) e riposo ${a.profile.restHr}: usa i ritmi come guida e la FC solo come controllo.`);
+  const zw = (a.zoneAlerts ?? []).filter((z) => z.tone === 'warn');
+  if (zw.length) lines.push(`• Zone FC da rivedere: ${zw.map((z) => z.title.toLowerCase() + (z.action ? ` (${z.action})` : '')).join('; ')}.`);
   lines.push('', persona === 'sergeant' ? `ORDINE: ${nextSession(a).title}. Il sub-2 non arriva per grazia ricevuta.` : `Oggi: ${nextSession(a).title} (${nextSession(a).why}).`);
   return lines.join('\n');
 }

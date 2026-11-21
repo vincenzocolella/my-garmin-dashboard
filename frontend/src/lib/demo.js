@@ -305,6 +305,11 @@ export function generateDemo(scenario = 'balanced', totalDays = 200) {
     days,
     intraday,
     activities,
-    profile: { vo2max: round(vo2, 1), racePredictions: null },
+    profile: {
+      vo2max: round(vo2, 1),
+      racePredictions: null,
+      hrZones: { sport: 'RUNNING', method: 'HR_RESERVE', maxHr: 195, restHr: 57, lthr: null, floors: [97, 137, 155, 167, 183] },
+      lactateThreshold: { hr: 174, speed: null, date: addDays(today, -20) },
+    },
   };
 }

@@ -170,11 +170,11 @@ export default function App() {
       dataset
         ? computeAnalytics(dataset, {
             rangeDays: range,
-            settings: { maxHr: settings.maxHr, restHr: settings.restHr, sleepNeedH: settings.sleepNeedH, illnessSensitivity: settings.illnessSensitivity },
+            settings: { maxHr: settings.maxHr, restHr: settings.restHr, sleepNeedH: settings.sleepNeedH, illnessSensitivity: settings.illnessSensitivity, zoneSource: settings.zoneSource },
             overrides,
           })
         : null,
-    [dataset, range, settings.maxHr, settings.restHr, settings.sleepNeedH, settings.illnessSensitivity, overrides],
+    [dataset, range, settings.maxHr, settings.restHr, settings.sleepNeedH, settings.illnessSensitivity, settings.zoneSource, overrides],
   );
 
   const syncAndJudge = async () => {

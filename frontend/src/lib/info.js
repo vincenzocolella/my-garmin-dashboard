@@ -86,8 +86,8 @@ export const INFO = {
     read: 'Se ti fermi o cammini durante un controllo, scegli direttamente C.',
   },
   planZones: {
-    what: 'Ritmi e zone del piano, con le zone ricalcolate sui tuoi dati Garmin.',
-    how: 'Zone del piano: FC max 195, FC a riposo 57 (% di FC di riserva). Colonna Garmin: stesse percentuali applicate a FC max e riposo misurati dall’orologio.',
+    what: 'Ritmi del piano e zone FC attive, confrontate con quelle scritte nel piano.',
+    how: 'Le zone attive sono lette da Garmin Connect a ogni sincronizzazione (profilo corsa, o predefinito). Se non disponibili: standard % FCR con FC max 195, riposo 57 e limiti 29/58/71/80/91%. Il riquadro “Zone FC” in cima avvisa quando i dati suggeriscono di aggiornarle: FC max superata più volte, FC a riposo misurata diversa da quella impostata, soglia del lattato Garmin fuori dalla Z4, uscite facili a ritmo del piano che finiscono in Z3.',
     read: 'Guida con lo sforzo e il ritmo; la FC è il controllo. Negli allunghi e nelle ripetute brevi la FC non fa in tempo a salire.',
   },
   planRace: {
