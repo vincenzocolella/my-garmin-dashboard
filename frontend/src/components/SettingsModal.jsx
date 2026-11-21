@@ -78,7 +78,7 @@ export function SettingsModal({ settings, onSave, onClose, onImport, onClearCach
     const blob = new Blob([JSON.stringify(dataset, null, 1)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `bio-os-telemetry-${dataset?.today ?? 'export'}.json`;
+    a.download = `garmin-dashboard-${dataset?.today ?? 'export'}.json`;
     a.click();
     URL.revokeObjectURL(a.href);
   };

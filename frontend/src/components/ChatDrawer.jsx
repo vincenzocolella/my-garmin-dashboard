@@ -52,8 +52,8 @@ export function ChatDrawer({ open, onClose }) {
         aria-hidden={!open}>
         <header className="flex items-center justify-between border-b border-edge px-5 py-4">
           <div>
-            <div className="flex items-center gap-2 text-sm font-semibold text-cyan"><Bot size={16} />Ask Your Telemetry</div>
-            <div className="text-[11px] text-gray-500">{ai.available ? 'AI con accesso all’intero JSON biometrico attivo' : 'Motore euristico (configura un provider AI per domande libere)'}</div>
+            <div className="flex items-center gap-2 text-sm font-semibold text-cyan"><Bot size={16} />Chiedi ai tuoi dati</div>
+            <div className="text-[11px] text-gray-500">{ai.available ? 'AI con accesso a tutti i tuoi dati Garmin attivi' : 'Motore euristico (configura un provider AI per domande libere)'}</div>
           </div>
           <button type="button" onClick={onClose} className="rounded p-1 text-gray-400 hover:text-white"><X size={18} /></button>
         </header>

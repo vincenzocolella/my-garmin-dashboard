@@ -167,7 +167,7 @@ export function HealthTab({ a }) {
       <SleepCard a={a} />
       <AIBox title="AI Sleep Coach" icon={Moon} task="sleep" heuristic={sleepCoachText} info="sleepCoach" />
       <AnsCard a={a} />
-      <AIBox title="AI Bio-Audit" icon={Activity} task="bioAudit" heuristic={bioAuditText} />
+      <AIBox title="AI Recupero" icon={Activity} task="bioAudit" heuristic={bioAuditText} />
       <DailyAnsCard a={a} />
     </div>
   );

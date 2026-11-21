@@ -49,10 +49,7 @@ export function Header({ tab, setTab, range, setRange, status, dataset, dataSour
           <div className="flex h-8 w-8 items-center justify-center rounded-md border border-cyan/40 bg-cyan/10">
             <Zap size={16} className="text-cyan" />
           </div>
-          <div className="leading-none">
-            <div className="num text-sm font-bold tracking-[0.25em] text-cyan">BIO-OS</div>
-            <div className="text-[9px] uppercase tracking-[0.3em] text-gray-500">telemetry // v2</div>
-          </div>
+          <div className="num text-sm font-bold uppercase tracking-[0.2em] text-cyan">Garmin Dashboard</div>
         </div>
 
         <nav className="flex gap-1 rounded-lg border border-edge bg-panel/60 p-1">
@@ -81,7 +78,7 @@ export function Header({ tab, setTab, range, setRange, status, dataset, dataSour
             {syncing ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
             Sync & Judge Now
           </button>
-          <button type="button" onClick={onChat} title="Ask Your Telemetry"
+          <button type="button" onClick={onChat} title="Chiedi ai tuoi dati"
             className="flex items-center gap-1.5 rounded-md border border-edge px-2.5 py-1.5 text-xs text-gray-300 hover:border-cyan/50 hover:text-cyan">
             <MessageSquare size={14} />
             <span className="hidden lg:inline">Ask</span>

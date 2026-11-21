@@ -1,9 +1,9 @@
-"""BIO-OS Telemetry API — proxy between Garmin Connect, the React dashboard and Gemini.
+"""Garmin Dashboard API — proxy between Garmin Connect, the React dashboard and Gemini.
 
 Routes (all /api routes require `Authorization: Bearer $APP_TOKEN` when APP_TOKEN is set):
   GET  /health                      liveness, no auth
   GET  /api/status                  which features are configured
-  GET  /api/telemetry?days=30       full biometric dataset (daily vitals, intraday, activities, profile)
+  GET  /api/telemetry?days=30       full dataset (daily vitals, intraday, activities, profile)
   GET  /api/days?start=&end=        daily vitals only (history backfill, <= 31 days)
   POST /api/ai                      {system, prompt, json} -> Gemini text
 """
@@ -46,9 +46,9 @@ TZ = ZoneInfo(os.getenv("TIMEZONE", "Europe/Rome"))  # Render runs in UTC; "toda
 WORKERS = int(os.getenv("GARMIN_WORKERS", "3"))
 MAX_DETAIL_FETCH = 25  # per-activity detail calls (splits / exercise sets) per request
 
-log = logging.getLogger("bio-os")
+log = logging.getLogger("garmin-dashboard")
 
-app = FastAPI(title="BIO-OS Telemetry API")
+app = FastAPI(title="Garmin Dashboard API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,

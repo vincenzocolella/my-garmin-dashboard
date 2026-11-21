@@ -210,7 +210,7 @@ export default function App() {
 
         {!analytics ? (
           <div className="flex items-center justify-center gap-3 py-32 text-sm text-gray-500">
-            <Loader2 className="animate-spin text-cyan" size={18} /> Sincronizzazione telemetria… (il primo caricamento di 30-90 giorni può richiedere fino a un minuto)
+            <Loader2 className="animate-spin text-cyan" size={18} /> Sincronizzazione dati Garmin… (il primo caricamento di 30-90 giorni può richiedere fino a un minuto)
           </div>
         ) : (
           <AIProvider settings={settings} analytics={analytics} backendStatus={backendStatus}>
@@ -226,7 +226,7 @@ export default function App() {
           </AIProvider>
         )}
         <footer className="pb-6 pt-2 text-center text-[10px] uppercase tracking-[0.2em] text-gray-700">
-          BIO-OS · dati Garmin via proxy non ufficiale · non è un dispositivo medico
+          Garmin Dashboard · dati via proxy non ufficiale · non è un dispositivo medico
         </footer>
       </main>
 

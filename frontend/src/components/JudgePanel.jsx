@@ -71,7 +71,7 @@ export function JudgePanel({ trigger, onPersona }) {
         <div className="border-t border-edge px-5 py-4">
           {error && <p className="mb-2 text-xs text-crimson">{error} · mostro il motore euristico</p>}
           <div className="scrollbar-thin max-h-96 overflow-y-auto whitespace-pre-wrap text-[13px] leading-relaxed text-gray-300">
-            {loading ? 'Analisi della telemetria in corso…' : result ?? heuristic}
+            {loading ? 'Analisi dei dati in corso…' : result ?? heuristic}
           </div>
           <div className="mt-3 flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-gray-600">
             {result ? <><Sparkles size={10} className="text-cyan" />AI · {PERSONAS[persona].label}</> : <><Cpu size={10} />motore euristico · {PERSONAS[persona].label}</>}
