@@ -17,6 +17,8 @@ export const DEFAULT_SETTINGS = {
   maxHr: '',
   restHr: '',
   sleepNeedH: 8,
+  age: '', // '' = from the Garmin profile
+  sex: '', // 'M' | 'F' | '' = from the Garmin profile
   illnessSensitivity: 'media',
   zoneSource: 'auto', // 'auto' = Garmin Connect when available, else standard | 'standard'
 };

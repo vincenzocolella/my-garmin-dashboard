@@ -45,6 +45,7 @@ CACHE_TTL_S = int(os.getenv("CACHE_TTL_S", "300"))
 TZ = ZoneInfo(os.getenv("TIMEZONE", "Europe/Rome"))  # Render runs in UTC; "today" must be the user's today
 WORKERS = int(os.getenv("GARMIN_WORKERS", "3"))
 MAX_DETAIL_FETCH = 25  # per-activity detail calls (splits / exercise sets) per request
+HISTORY_DAYS = 365  # how far back the dashboard keeps history (browser backfill + activities)
 
 log = logging.getLogger("garmin-dashboard")
 
@@ -186,6 +187,10 @@ def load_day(d: date) -> dict:
             "bbDrained": stats.get("bodyBatteryDrainedValue"),
             "steps": stats.get("totalSteps"),
             "activeKcal": stats.get("activeKilocalories"),
+            # WHO-style activity minutes: moderate + vigorous (vigorous counts double in Garmin's weekly goal)
+            "intensityMin": (stats.get("moderateIntensityMinutes") or 0) + 2 * (stats.get("vigorousIntensityMinutes") or 0)
+            if stats.get("moderateIntensityMinutes") is not None or stats.get("vigorousIntensityMinutes") is not None
+            else None,
             "sleep": {
                 "score": _dig(dto, "sleepScores", "overall", "value"),
                 "total": dto.get("sleepTimeSeconds"),
@@ -372,6 +377,21 @@ def _lactate(raw) -> dict | None:
     return {"hr": sh.get("heartRate"), "speed": sh.get("speed"), "date": sh.get("calendarDate")}
 
 
+def _user(raw) -> dict:
+    """Age and sex from the Garmin user settings (used for age/sex norms of the longevity index)."""
+    u = (raw.get("userData") if isinstance(raw, dict) else None) or {}
+    birth, age = u.get("birthDate"), None
+    if isinstance(birth, str) and len(birth) >= 10:
+        try:
+            b = date.fromisoformat(birth[:10])
+            t = today_local()
+            age = t.year - b.year - ((t.month, t.day) < (b.month, b.day))
+        except ValueError:
+            age = None
+    sex = {"MALE": "M", "FEMALE": "F"}.get(str(u.get("gender") or "").upper())
+    return {"age": age, "sex": sex}
+
+
 def load_profile(d: date) -> dict:
     ds = d.isoformat()
 
@@ -387,6 +407,7 @@ def load_profile(d: date) -> dict:
             "racePredictions": preds if any(preds.values()) else None,
             "hrZones": _hr_zones(soft_call(lambda g: g.get_heart_rate_zones())),
             "lactateThreshold": _lactate(soft_call(lambda g: g.get_lactate_threshold())),
+            **_user(soft_call(lambda g: g.get_user_profile())),
         }
 
     return cached(f"profile:{ds}", fetch, 3 * 3600)
@@ -404,7 +425,7 @@ def status():
 
 
 @app.get("/api/telemetry", dependencies=[Depends(require_token)])
-def telemetry(days: int = Query(30, ge=7, le=180), refresh: bool = False, since: date | None = None):
+def telemetry(days: int = Query(30, ge=7, le=365), refresh: bool = False, since: date | None = None):
     """`since`: the browser already caches older days, so only days >= since (and always the last 2) are fetched."""
     today = today_local()
     if refresh:
@@ -416,9 +437,9 @@ def telemetry(days: int = Query(30, ge=7, le=180), refresh: bool = False, since:
         dates = [d for d in dates if d >= since or (today - d).days <= 1]
     with ThreadPoolExecutor(WORKERS) as ex:
         day_rows = list(ex.map(load_day, dates))
-    # Activities for >= 180 days (one cheap call): the wellness scan needs training load around older episodes,
-    # +42 days so the chronic load (CTL) is warmed up at the start of the window.
-    activities = load_activities(today - timedelta(max(days, 180) + 42), today)
+    # Activities for a full year (one cheap call): the "Max" range and the wellness scan need training load
+    # around older episodes, +42 days so the chronic load (CTL) is warmed up at the start of the window.
+    activities = load_activities(today - timedelta(max(days, HISTORY_DAYS) + 42), today)
 
     return {
         "source": "garmin",

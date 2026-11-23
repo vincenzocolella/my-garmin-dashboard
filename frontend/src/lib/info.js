@@ -1,18 +1,28 @@
 // "ⓘ" explanations shown on every card: what the metric is, how it is computed, how to read it.
 export const INFO = {
   readiness: {
-    what: 'Quanto il tuo corpo è pronto oggi rispetto al tuo normale. 100 = meglio della tua media, ~88 = la tua normalità, sotto 65 = recupero ridotto.',
-    how: 'Media pesata di 4 anelli: HRV + FC a riposo (35%), sonno (25%), stress (20%), Body Battery (20%). HRV e FC riposo sono confrontati con media e deviazione standard dei tuoi 30 giorni precedenti: alla tua media valgono 88, +1 SD = 100, ogni SD peggiore toglie 30 punti. Stress ≤ 20 = 100. Score sonno Garmin ×1,1.',
-    read: '≥ 85 ottimale · 70-84 buona · 55-69 ridotta (solo facile) · < 55 bassa (riposo). Il Longevity index è separato: medie di 30 giorni di FC riposo, HRV, sonno, passi, VO2max e stress, scala 0-100, non clinico.',
+    what: 'Quanto sei recuperato stamattina rispetto alla TUA normalità (non rispetto agli altri). 75 = il tuo livello abituale.',
+    how: 'Quattro componenti, ognuno su scala 0-100 dove 75 = la tua media e ogni deviazione standard di differenza vale 15 punti (+1 DS → 90, −1 DS → 60, −2 DS → 45). Sistema nervoso 40%: media HRV degli ultimi 7 giorni (confrontata con la tua zona normale, baseline 60 giorni ± ½ DS, metodo Plews/Altini) 40%, HRV della notte 30%, FC a riposo 30%; l’HRV è analizzato in scala logaritmica perché la sua distribuzione è asimmetrica. Sonno 30%: score Garmin della notte, ore dormite vs il tuo bisogno e media delle ultime 3 notti (il debito si accumula). Stress di ieri 15%: stress medio della giornata di ieri vs la tua media. Carico allenamento 15%: fatica dei 7 giorni / forma delle 6 settimane (ATL/CTL), 1 = in equilibrio = 75. La Body Battery non è inclusa: Garmin la calcola già da HRV, stress e sonno, la conteremmo due volte.',
+    read: '≥ 85 sopra la tua norma (buon giorno per uno sforzo) · 65-84 nella norma · 50-64 ridotta (meglio facile) · < 50 bassa (riposo). Il componente più basso ti dice cosa sta frenando il recupero.',
+  },
+  longevity: {
+    what: 'Indice di salute a lungo termine: abitudini e fitness confrontate con le evidenze degli studi di popolazione, non con te stesso. Si muove lentamente.',
+    how: 'Ogni voce è 0-100 (0 = fascia di rischio alto, 100 = fascia di rischio minimo) e pesa quanto predice la mortalità in letteratura: VO2max 25% (percentile tra i coetanei, registro FRIEND), minuti di attività 15% (moderati + 2 × vigorosi, OMS), passi 10%, forza 10% (sedute/settimana), FC a riposo 10%, durata del sonno 10%, regolarità del sonno 10% (variabilità dell’orario di metà sonno), HRV 5% (atteso per età), stress cronico 5%. Finestra = periodo selezionato, minimo 30 giorni. Età e sesso da Garmin Connect o dalle impostazioni.',
+    read: '≥ 70 buono · 50-69 migliorabile · < 50 da curare. “Dove guadagni di più” indica le voci con più margine × peso. Non è un dato clinico.',
+  },
+  summary: {
+    what: 'Il punto della situazione in parole semplici: come è andata ieri, com’è andata la notte, la giornata di oggi (solo dopo le 11 e con abbastanza dati) e la tendenza dell’ultima settimana.',
+    how: 'Ogni valore (stress, passi, sonno, energia, HRV, FC a riposo) è confrontato con la tua normalità dei 30 giorni precedenti e tradotto in un giudizio (“più teso del solito”, “ricarica parziale”). La frase in alto combina la readiness di stamattina, il Radar sintomi e i segnali della settimana. “Racconta con AI” fa scrivere lo stesso riepilogo al modello configurato.',
+    read: 'I chip colorati sono i numeri chiave: verde meglio del solito, ambra da tenere d’occhio, rosso fuori norma. I consigli “Per oggi” riguardano stile di vita e recupero più che l’allenamento.',
   },
   hrvRhr: {
     what: 'HRV notturno (variabilità del battito, ms) e FC a riposo: i due marcatori più sensibili del sistema nervoso autonomo.',
-    how: 'La banda azzurra è la tua normalità: media ± 1 deviazione standard dei 30 giorni precedenti a ogni giorno. Le linee tratteggiate sono le baseline. z = (valore − media) / SD.',
-    read: 'HRV sotto la banda per 3+ giorni o FC riposo +3 bpm sopra baseline = fatica, stress o inizio di malattia. HRV sopra la banda = buon momento per la qualità.',
+    how: 'L’HRV di una singola notte è rumoroso: la linea spessa è la media mobile di 7 giorni, quella che conta per le decisioni. La banda azzurra è la tua zona normale: baseline dei 60 giorni precedenti ± ½ deviazione standard (la “smallest worthwhile change”), calcolata sul logaritmo dell’HRV. “Nel periodo” = media e tendenza lineare sull’intervallo selezionato.',
+    read: 'Media 7gg sotto la banda per più giorni o FC riposo +3 bpm sopra baseline = fatica, stress o inizio di malattia. Media 7gg sopra la banda = buon adattamento.',
   },
   sleep: {
     what: 'Fasi del sonno per notte (profondo, REM, leggero, veglia), score Garmin e debito di sonno.',
-    how: 'Debito 7gg = somma di (bisogno − ore dormite) delle ultime 7 notti; le notti lunghe ripagano. Efficienza = sonno / (sonno + veglia). Il bisogno si imposta in Impostazioni.',
+    how: 'Debito 7gg = somma di (bisogno − ore dormite) delle ultime 7 notti; le notti lunghe ripagano. Media, efficienza, fasi, orari e notti corte seguono il periodo selezionato. Efficienza = sonno / (sonno + veglia). Il bisogno si imposta in Impostazioni.',
     read: 'Debito < 3 h ok, 3-6 h attenzione, > 6 h critico. Profondo 15-25% e REM 20-25% sono i range tipici; efficienza > 90% ottima.',
   },
   sleepCoach: {
@@ -26,8 +36,8 @@ export const INFO = {
     read: 'Barre blu = riposo, ambra = attivazione, rosse = stress alto. Una notte rossa significa che hai dormito ma non recuperato.',
   },
   dailyAns: {
-    what: 'Per ogni giorno: Body Battery caricata (verde) e consumata (rossa), stress medio (linea).',
-    how: 'Valori giornalieri Garmin.',
+    what: 'Per ogni giorno: Body Battery caricata (verde) e consumata (rossa), stress medio (linea), con le medie del periodo selezionato.',
+    how: 'Valori giornalieri Garmin; le medie escludono oggi, che non è ancora finito. Giorno in deficit = consumo superiore alla ricarica di oltre 5 punti.',
     read: 'Se il consumo supera la ricarica per più giorni di fila stai andando in debito energetico.',
   },
   pmc: {
@@ -108,7 +118,7 @@ export const INFO = {
   },
   illnessTimeline: {
     what: 'Indice di malessere giorno per giorno sugli ultimi mesi, con gli episodi evidenziati.',
-    how: 'Barre = indice combinato (rosse se sopra soglia). Linee = scarto della FC a riposo (bpm) e dell’HRV (%) dalla baseline. La cronologia fino a 180 giorni viene scaricata in background e salvata nel browser.',
+    how: 'Barre = indice combinato (rosse se sopra soglia); passando il mouse vedi gli scarti di FC a riposo e HRV di quel giorno. Mostra il periodo selezionato (minimo 30 giorni); lo storico fino a 12 mesi viene scaricato in background e salvato nel browser.',
     read: 'I picchi isolati di un giorno sono spesso alcol, cena tardiva o una notte storta; più giorni consecutivi sono un episodio vero.',
   },
   illnessEpisodes: {
@@ -131,36 +141,41 @@ Object.assign(INFO, {
     read: 'Le note in fondo riassumono cosa è andato bene (verde) e cosa correggere (ambra).',
   },
   runsOverview: {
-    what: 'Tutte le corse del periodo selezionato (7/14/30/90 giorni) confrontate con il periodo precedente di uguale durata.',
+    what: 'Tutte le corse del periodo selezionato (7, 30, 90 giorni o tutto lo storico) confrontate con il periodo precedente di uguale durata.',
     how: 'Totali sommati sulle corse; passo medio = tempo totale / km totali; FC media pesata sulla durata. Record cercati nei lap degli ultimi 6 mesi (il miglior tratto consecutivo di 5 e 10 km). Le tendenze sono regressioni lineari sulle sole uscite facili, espresse ogni 30 giorni.',
     read: 'Volume in crescita oltre il 30% rispetto al periodo prima = attenzione; FC delle uscite facili in calo = miglioramento aerobico.',
   },
   hrPace: {
-    what: 'Il rapporto tra battiti e ritmo nel tempo: la prova più diretta che il tuo motore aerobico sta migliorando.',
-    how: 'Ogni km di ogni corsa (escluso il primo, dove la FC sta ancora salendo) diventa un punto passo-FC. Dalla relazione media tra passo e FC di tutti i tuoi km stimo, per ogni km, che FC avresti avuto al ritmo di riferimento e che ritmo avresti tenuto alla FC di riferimento (il limite della tua Z2). Ogni punto settimanale è la mediana delle 4 settimane precedenti.',
-    read: 'Migliori se la FC a ritmo costante scende e il ritmo a FC costante sale. 2-3 bpm in meno o 10 s/km in più in 2 mesi sono un miglioramento reale. Caldo, salite e stanchezza alzano la FC: conta la tendenza, non il singolo punto.',
+    what: 'Efficienza aerobica: quanto vai veloce a parità di battiti. È la prova più diretta che il motore aerobico sta migliorando.',
+    how: 'Ogni km di ogni corsa (escluso il primo, dove la FC sta ancora salendo) diventa un punto passo-FC. Dalla relazione media tra passo e FC di tutti i tuoi km stimo che ritmo avresti tenuto al limite della tua Z2. Ogni punto settimanale è la mediana delle 4 settimane precedenti; la finestra è il periodo selezionato, minimo 120 giorni. “FC a ritmo costante” e “passo a FC costante” sono lo stesso dato visto da due lati, per questo il grafico è uno solo. Trend EF = regressione dell’Efficiency Factor (velocità / FC) sulle sole corse facili del periodo. Deriva cardiaca (decoupling) = calo dell’efficienza tra prima e seconda metà di ogni corsa.',
+    read: 'Migliori se la linea sale (più veloce a parità di battiti): 10 s/km in 2 mesi sono un miglioramento reale. Deriva < 5% = buona tenuta aerobica. Caldo, salite e stanchezza alzano la FC: conta la tendenza, non il singolo punto.',
   },
 });
 
 // "Elemento per elemento": every series, column and KPI with its meaning and the ideal value.
 const ITEMS = {
   readiness: [
-    ['Numero al centro', 'Readiness di oggi, 0-100', '≥ 85 ottimale, 70-84 buona'],
-    ['vs μ30', 'Differenza dalla tua media degli ultimi 30 giorni', 'positivo'],
-    ['Anello azzurro · HRV + FC riposo', 'Sistema nervoso: HRV e FC a riposo rispetto alla tua normalità', '≥ 85'],
-    ['Anello viola · Sonno', 'Score sonno Garmin riscalato', '≥ 85 (score Garmin ≥ 78)'],
-    ['Anello ambra · Stress', 'Più è pieno, meno stress hai avuto', '≥ 80 (stress medio ≤ 35)'],
-    ['Anello verde · Body Battery', 'Massimo di Body Battery raggiunto oggi', '≥ 80'],
-    ['Longevity index', 'Salute a lungo termine dalle medie di 30 giorni', '≥ 70'],
-    ['Grafico in basso', 'Readiness giorno per giorno; linea grigia = tua media', 'sopra la linea'],
+    ['Numero al centro', 'Readiness di stamattina, 0-100 (75 = la tua norma)', '≥ 65; ≥ 85 per le giornate impegnative'],
+    ['Anello azzurro · Sistema nervoso', 'HRV (media 7gg e notte) e FC a riposo rispetto alla tua baseline di 60 giorni', '≥ 65'],
+    ['Anello viola · Sonno', 'Score Garmin, ore vs bisogno, ultime 3 notti', '≥ 75'],
+    ['Anello ambra · Stress di ieri', 'Stress medio di ieri rispetto al tuo solito', '≥ 65'],
+    ['Anello verde · Carico', 'Fatica recente rispetto alla forma di fondo (ATL/CTL)', '≥ 60'],
+    ['Media periodo / giorni < 50 / ≥ 85', 'Andamento nel periodo selezionato', 'pochi giorni sotto 50'],
+    ['Grafico in basso', 'Readiness giorno per giorno; linea grigia = la tua norma (75)', 'intorno o sopra la linea'],
+  ],
+  longevity: [
+    ['Barre', 'Punteggio di ogni voce: verde fascia di rischio basso, ambra intermedia, rossa alta', 'verdi'],
+    ['% accanto alla voce', 'Peso della voce nell’indice (dall’evidenza scientifica)', '—'],
+    ['Copertura dati', 'Quanta parte dell’indice è calcolata su dati reali', '100%'],
+    ['Dove guadagni di più', 'Le voci con più margine moltiplicato per il peso', '—'],
   ],
   hrvRhr: [
-    ['Linea azzurra · HRV', 'Variabilità del battito durante la notte (ms). Più alta = sistema nervoso riposato', 'dentro o sopra la banda'],
-    ['Banda azzurra', 'Tua normalità: media ± 1 deviazione standard dei 30 giorni prima', '—'],
+    ['Linea azzurra sottile · HRV notte', 'Variabilità del battito della singola notte (ms)', 'non conta il singolo valore'],
+    ['Linea azzurra spessa · media 7gg', 'Media mobile di 7 notti: il segnale affidabile', 'dentro o sopra la banda'],
+    ['Banda azzurra', 'Tua zona normale: baseline 60 giorni ± ½ deviazione standard', '—'],
     ['Linea rossa · FC riposo', 'Battiti a riposo (asse destro). Più bassa = cuore riposato', 'sulla o sotto la tratteggiata'],
-    ['Tratteggiate', 'Baseline (media 30 giorni) di HRV e FC riposo', '—'],
-    ['z', 'Quante deviazioni standard sei lontano dalla media', 'tra −1 e +1, o positivo per l’HRV'],
-    ['Trend 3gg', 'HRV medio degli ultimi 3 giorni rispetto alla baseline', 'sopra −10%'],
+    ['Tratteggiata rossa', 'Baseline della FC a riposo (60 giorni)', '—'],
+    ['Nel periodo', 'Media e variazione lungo l’intervallo selezionato', 'HRV stabile o in crescita, FC stabile o in calo'],
   ],
   sleep: [
     ['Barre viola scuro · Profondo', 'Sonno profondo: riparazione fisica', '15-25% del totale'],
@@ -196,7 +211,7 @@ const ITEMS = {
     ['Linea rossa · ATL (fatica)', 'Carico medio dell’ultima settimana', 'sopra la CTL nei blocchi, sotto in scarico'],
     ['Barre grigie · Carico', 'Carico di ogni giorno (TRIMP)', '—'],
     ['Scala “Forma oggi”', 'TSB = CTL − ATL con il cursore sul valore di oggi', '−10…−30 per costruire, +5…+20 il giorno della gara'],
-    ['Barre TSB colorate', 'Forma giorno per giorno, colore = zona', 'verdi (ottimale) nei blocchi'],
+    ['Tooltip', 'Forma (TSB = CTL − ATL) e zona di ogni giorno', '—'],
     ['Linea ACWR', 'Carico ultima settimana / media 4 settimane', '0,8-1,3 (fascia verde); > 1,5 rischio'],
     ['Ramp rate', 'Quanto sale la CTL in una settimana', '≤ 5-7 punti'],
     ['Rischio OT', 'Rischio di sovrallenamento da HRV, FC riposo, ACWR, TSB, sonno', '< 35'],
@@ -254,12 +269,11 @@ const ITEMS = {
     ['Costanza', 'Settimane con almeno una corsa e pausa più lunga', 'pausa < 10 giorni'],
   ],
   hrPace: [
-    ['FC a ritmo costante', 'FC stimata se corressi sempre al ritmo di riferimento', 'in calo'],
-    ['Passo a FC costante', 'Passo stimato al limite della tua Z2; più in alto = più veloce', 'in salita'],
-    ['Linea tratteggiata bianca', 'Tendenza lineare dell’intero periodo', 'FC giù, passo su'],
-    ['Punti grigi / azzurri', 'Ogni km corso nel primo terzo / nell’ultimo terzo del periodo', 'nuvola azzurra più in basso o più a sinistra'],
-    ['Linee grigia / azzurra', 'Relazione media FC-ritmo di ciascun periodo', 'azzurra sotto la grigia'],
-    ['vs 2 mesi fa', 'Ultime 4 settimane contro le settimane 8-12 fa', '≤ −2 bpm o ≤ −5 s/km'],
+    ['Linea verde', 'Passo stimato al limite della tua Z2 settimana per settimana; più in alto = più veloce', 'in salita'],
+    ['Linea tratteggiata bianca', 'Tendenza lineare dell’intero periodo', 'in salita'],
+    ['vs 2 mesi fa', 'Ultime 4 settimane contro le settimane 8-12 fa (in s/km e l’equivalente in battiti)', '≤ −5 s/km'],
+    ['Trend EF facili', 'Variazione dell’efficienza (velocità/FC) sulle corse facili del periodo', '> +2%'],
+    ['Barre deriva cardiaca', 'Quanto sale la FC nella seconda metà di ogni corsa: verde < 5%, ambra > 5%', 'verdi'],
   ],
   hybrid: [
     ['Barre azzurre', 'Carico cardiovascolare settimanale (TRIMP)', 'stabile o in crescita graduale'],
@@ -311,9 +325,8 @@ const ITEMS = {
   illnessTimeline: [
     ['Barre', 'Indice giornaliero: rosse = giorno anomalo, ambra = vicino alla soglia', 'grigie'],
     ['Linea tratteggiata', 'Soglia di allarme (50)', 'sotto'],
-    ['Linea rossa', 'Scarto della FC a riposo dalla baseline (bpm)', 'vicino a 0'],
-    ['Linea azzurra', 'Scarto dell’HRV dalla baseline (%)', 'vicino a 0 o positivo'],
     ['Fasce colorate', 'Episodi rilevati', '—'],
+    ['Tooltip', 'Segnali e scarti di FC a riposo e HRV del giorno', '—'],
   ],
   illnessEpisodes: [
     ['Tipo', 'Malattia, sovraccarico, debito di sonno o stress', '—'],

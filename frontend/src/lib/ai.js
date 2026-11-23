@@ -1,6 +1,7 @@
 import { apiFetch } from './api';
 import { fmtDuration, fmtH, fmtPace, round } from './util';
 import { overtrainingRisk } from './insights';
+import { dailySummary } from './summary';
 
 export const PROVIDERS = {
   backend: 'Backend FastAPI (Gemini su server)',
@@ -27,13 +28,24 @@ export function buildContext(a) {
   a.activities.forEach((x) => loadByDate.set(x.date, (loadByDate.get(x.date) ?? 0) + x.pmcLoad));
   return {
     oggi: a.today,
-    finestra_giorni: a.rangeDays,
+    finestra: a.rangeLabel,
     sorgente: a.scenario ? `${a.source}:${a.scenario}` : a.source,
     profilo: { fc_max: a.profile.maxHr, fc_riposo: a.profile.restHr, vo2max: a.race.vo2max, bisogno_sonno_h: a.sleep.need },
-    readiness: { score: r.score, delta_vs_media30: r.delta, hrv_z: round(r.hrvZ, 2), fc_riposo_delta: round(r.rhrDelta, 1), componenti: { hrv: r.hrv, fc_riposo: r.rhr, sonno: r.sleep, stress: r.stress, body_battery: r.bb } },
+    readiness: {
+      scala: '75 = tua norma, ogni deviazione standard dalla tua baseline 60gg vale 15 punti',
+      score: r.score, fascia: r.band.label, delta_vs_media30: r.delta, media_periodo: r.periodMean,
+      componenti_0_100: { sistema_nervoso_40pct: r.autonomic, sonno_30pct: r.sleep, stress_ieri_15pct: r.stress, carico_allenamento_15pct: r.load },
+      hrv_notte_z_ln: round(r.hrvZ, 2), hrv_7gg_in_unita_swc: round(r.hrv7Z, 2), hrv_7gg_ms: r.hrv7ms, zona_normale_hrv_ms: [round(r.hrvBase.swcLo), round(r.hrvBase.swcHi)], fc_riposo_delta: round(r.rhrDelta, 1), rapporto_fatica_forma: r.loadRatio,
+    },
     oggi_vitali: { hrv_ms: a.latest.hrv, hrv_status: a.latest.hrvStatus, fc_riposo: a.latest.rhr, stress_medio: a.latest.stress, bb_max: a.latest.bbMax, bb_min: a.latest.bbMin, passi: a.latest.steps, sonno: fmtH(a.sleep.lastNight?.hours), sonno_score: a.sleep.lastNight?.score },
-    longevity: { score: a.longevity.score, medie_30gg: { ...a.longevity.averages, sleepH: fmtH(a.longevity.averages.sleepH) } },
-    sonno: { media7: fmtH(a.sleep.avg7), debito7: fmtH(a.sleep.debt7), efficienza7_pct: a.sleep.efficiency7, deep7_pct: a.sleep.deepPct7, rem7_pct: a.sleep.remPct7, score7: a.sleep.score7 },
+    longevity: {
+      score: a.longevity.score, finestra_giorni: a.longevity.window, eta: a.longevity.age, sesso: a.longevity.sex, copertura_pct: a.longevity.coverage,
+      componenti: a.longevity.parts.map((x) => ({ voce: x.label, peso_pct: x.weight, punteggio: x.score, valore: x.value, riferimento: x.ref })),
+      leve_principali: a.longevity.levers.map((x) => x.label),
+    },
+    riepilogo: dailySummary(a).context,
+    sonno: { media7: fmtH(a.sleep.avg7), debito7: fmtH(a.sleep.debt7), efficienza7_pct: a.sleep.efficiency7, deep7_pct: a.sleep.deepPct7, rem7_pct: a.sleep.remPct7, score7: a.sleep.score7, periodo: { media: fmtH(a.sleep.period.avg), score: a.sleep.period.score, efficienza_pct: a.sleep.period.efficiency, deep_pct: a.sleep.period.deepPct, rem_pct: a.sleep.period.remPct, notti_sotto_6h: `${a.sleep.period.shortNights}/${a.sleep.period.nights}` } },
+    stress_energia_periodo: a.ans.period,
     sistema_nervoso_oggi: intr ? { stress_notturno: intr.nightStress, ricarica_bb_notte: intr.bbGain, stress_medio_veglia: intr.dayMean, finestre: intr.windows.map((w) => `${w.label} ${intr.rows[w.from].label}-${intr.rows[w.to].label}`) } : null,
     carico: p ? { ctl: p.ctl, atl: p.atl, tsb: p.tsb, acwr: p.acwr, zona_tsb: a.pmc.zone?.label, ramp_rate_ctl_sett: a.pmc.rampRate } : null,
     corsa: {
@@ -116,7 +128,7 @@ const PERSONA_PROMPTS = {
 
 const TASKS = {
   judge: 'GIUDIZIO GLOBALE: giudica la giornata e le ultime settimane (recupero, bilanciamento corsa/pesi, sonno). Dimmi esattamente cosa sto sbagliando e la sessione ideale di oggi. Massimo 250 parole.',
-  bioAudit: 'ANALISI RECUPERO: incrocia sonno, stress, HRV, FC a riposo e Body Battery. Valuta (in termini fisiologici) segni di infiammazione latente, sovraccarico del sistema nervoso o cattiva igiene del sonno. Chiudi con 3-5 prescrizioni pratiche per oggi. Massimo 220 parole.',
+  summary: 'COME STAI: racconta il mio stato complessivo come farebbe una persona esperta che conosce bene i miei dati, in modo interpretativo e poco tecnico. Usa soprattutto "riepilogo" (ieri, stanotte, oggi_finora, settimana) e il resto dei dati come contesto. Focus su salute, sonno, stress, energia e recupero; nomina l’allenamento solo se spiega qualcosa. Niente sigle (HRV, TSB, ACWR, z-score) senza tradurle in parole semplici, pochi numeri e solo quelli che contano. Struttura: una frase di sintesi; "Ieri:" (giornata e come si è chiusa); "Stanotte:"; "Oggi:" SOLO se riepilogo.oggi_disponibile è true, altrimenti non nominare la giornata di oggi oltre al risveglio; "Settimana:" (tendenze e cosa le spiega); "Per oggi:" 2-3 consigli pratici di stile di vita. Massimo 230 parole. Questo stile semplice vale qualunque sia la personalità impostata, che ne cambia solo il tono.',
   runningCoach: 'AI RUNNING COACH: analizza il macro-ciclo (PMC, ACWR, distribuzione zone 80/20, Efficiency Factor, decoupling). Segnala se le corse facili sono troppo forti, stima il rischio di overtraining e genera la prossima sessione ideale con passi (min/km) e FC precisi. Massimo 250 parole.',
   sleep: 'AI SLEEP COACH: analizza architettura del sonno (profondo, REM, veglia), debito, regolarità degli orari, legame tra ore di sonno e HRV, effetto di allenamenti serali e stress notturno. Chiudi con prescrizioni concrete e personalizzate (orario di letto preciso calcolato dalla sveglia media). Massimo 230 parole.',
   illness: 'AI HEALTH DETECTIVE: analizza gli episodi di malessere rilevati (malattia, sovraccarico, debito di sonno, stress), il loro contesto (carico e sonno prima, allenamenti durante, tempi di rientro) e lo stato attuale. Individua i trigger ricorrenti e dai un protocollo di prevenzione e di rientro. Ricorda che è un’analisi statistica e non una diagnosi. Massimo 230 parole.',
@@ -133,8 +145,8 @@ export function systemFor(persona) {
 export function taskPrompt(task, a, extra = {}) {
   const ctx = JSON.stringify(buildContext(a));
   if (task === 'insights')
-    return `Per ciascuna card della dashboard genera UNA frase diagnostica (max 160 caratteri), specifica e numerica, come "HRV in calo del 14% per 3 giorni consecutivi nonostante volume stabile: possibile stress extra-sportivo".
-Card: readiness (readiness score e anelli), longevity (indice longevità), hrvRhr (HRV e FC riposo vs baseline), sleep (architettura sonno e debito), ans (stress intraday vs Body Battery), pmc (CTL/ATL/TSB/ACWR), ef (efficienza aerobica e decoupling), zones (distribuzione zone 80/20), race (previsioni gara e VO2max), runs (ultime corse), hybrid (interferenza corsa/pesi), volume (volume e tonnellaggio forza), planOverview (andamento piano mezza sub-2), planWeek (sessioni di questa settimana), planGates (controlli A/B/C), illnessNow (radar sintomi: segnali di malessere oggi), illnessTimeline (radar sintomi: storico), illnessPatterns (radar sintomi: trigger).
+    return `Per ciascuna card della dashboard genera UNA frase interpretativa (max 160 caratteri) che dica cosa significano i dati e cosa ne consegue, SENZA ripetere i numeri già mostrati nella card (KPI e grafici sono già visibili). Esempio: "HRV in calo da 3 giorni senza un aumento di allenamento: probabile stress extra-sportivo, proteggi il sonno".
+Card: readiness (recupero di stamattina vs la tua norma: sistema nervoso, sonno, stress di ieri, carico), longevity (abitudini e fitness vs popolazione), hrvRhr (HRV e FC riposo vs baseline), sleep (architettura sonno e debito), ans (stress intraday vs Body Battery), pmc (CTL/ATL/TSB/ACWR), ef (efficienza aerobica e decoupling), zones (distribuzione zone 80/20), race (previsioni gara e VO2max), runs (ultime corse), hybrid (interferenza corsa/pesi), volume (volume e tonnellaggio forza), planOverview (andamento piano mezza sub-2), planWeek (sessioni di questa settimana), planGates (controlli A/B/C), illnessNow (radar sintomi: segnali di malessere oggi), illnessTimeline (radar sintomi: storico), illnessPatterns (radar sintomi: trigger).
 Rispondi SOLO con un oggetto JSON con esattamente queste chiavi: ${INSIGHT_KEYS.join(', ')}.\n\nDATI:\n${ctx}`;
   if (task === 'chat') {
     const history = (extra.history ?? []).slice(-8).map((m) => `${m.role === 'user' ? 'UTENTE' : 'ASSISTENTE'}: ${m.text}`).join('\n');

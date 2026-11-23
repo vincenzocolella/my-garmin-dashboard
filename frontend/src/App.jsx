@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Loader2 } from 'lucide-react';
 import { ChatDrawer } from './components/ChatDrawer';
-import { Header } from './components/Header';
+import { Header, RANGES } from './components/Header';
 import { JudgePanel } from './components/JudgePanel';
 import { SettingsModal } from './components/SettingsModal';
 import { AIProvider, ErrorBoundary } from './components/ui';
@@ -17,7 +17,7 @@ import { RunningTab } from './tabs/RunningTab';
 import { StrengthTab } from './tabs/StrengthTab';
 
 const DAYS_CACHE_KEY = 'bio-os-days-v1';
-const HISTORY_DAYS = 180;
+const HISTORY_DAYS = 365; // "Max" range: everything the browser has cached, backfilled in the background
 
 function readDaysCache(base) {
   try {
@@ -46,6 +46,9 @@ export default function App() {
   useEffect(() => {
     if (tab === 'wellness') setTab('health'); // the illness tab now lives in the health tab (Radar sintomi)
   }, [tab, setTab]);
+  useEffect(() => {
+    if (!RANGES.includes(range)) setRange(30); // 14g was removed
+  }, [range, setRange]);
   const [dataset, setDataset] = useState(null);
   const [imported, setImported] = useState(null);
   const [status, setStatus] = useState({ state: 'idle' });
@@ -60,7 +63,8 @@ export default function App() {
   const backfilled = useRef('');
 
   const { dataSource, scenario, apiBase, appToken } = settings;
-  const fetchDays = range > 30 ? 90 : 30; // baselines need 30 days even when showing 7D/14D
+  // baselines need 30+ days even on 7g; older days for 90g/Max come from the browser cache + background backfill
+  const fetchDays = range === 'max' || range > 30 ? 90 : 30;
   const conn = useMemo(() => ({ apiBase, appToken }), [apiBase, appToken]);
 
   const load = useCallback(
@@ -172,11 +176,11 @@ export default function App() {
       dataset
         ? computeAnalytics(dataset, {
             rangeDays: range,
-            settings: { maxHr: settings.maxHr, restHr: settings.restHr, sleepNeedH: settings.sleepNeedH, illnessSensitivity: settings.illnessSensitivity, zoneSource: settings.zoneSource },
+            settings: { maxHr: settings.maxHr, restHr: settings.restHr, sleepNeedH: settings.sleepNeedH, illnessSensitivity: settings.illnessSensitivity, zoneSource: settings.zoneSource, age: settings.age, sex: settings.sex },
             overrides,
           })
         : null,
-    [dataset, range, settings.maxHr, settings.restHr, settings.sleepNeedH, settings.illnessSensitivity, settings.zoneSource, overrides],
+    [dataset, range, settings.maxHr, settings.restHr, settings.sleepNeedH, settings.illnessSensitivity, settings.zoneSource, settings.age, settings.sex, overrides],
   );
 
   const syncAndJudge = async () => {
@@ -212,7 +216,7 @@ export default function App() {
 
         {!analytics ? (
           <div className="flex items-center justify-center gap-3 py-32 text-sm text-gray-500">
-            <Loader2 className="animate-spin text-cyan" size={18} /> Sincronizzazione dati Garmin… (il primo caricamento di 30-90 giorni può richiedere fino a un minuto)
+            <Loader2 className="animate-spin text-cyan" size={18} /> Sincronizzazione dati Garmin…
           </div>
         ) : (
           <AIProvider settings={settings} analytics={analytics} backendStatus={backendStatus}>

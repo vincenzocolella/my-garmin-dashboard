@@ -1,7 +1,7 @@
 import {
-  addDays, clamp, dateRange, diffDays, isNum, linreg, mean, pctChange, round, sd, sum, weekStart,
+  addDays, clamp, dateRange, diffDays, fmt, fmtH, isNum, linreg, mean, pctChange, round, sd, sum, weekStart,
 } from './util';
-import { detectIllness } from './illness';
+import { detectIllness, episodeStats } from './illness';
 import { planStatus } from './plan';
 import { zoneConfig, zoneOf } from './zones';
 
@@ -12,13 +12,20 @@ export const FOCUS_OPTIONS = ['Upper', 'Lower', 'Full Body', 'Core'];
 const startMs = (a) => Date.parse(`${(a.start || `${a.date} 12:00:00`).replace(' ', 'T')}Z`);
 
 /**
- * Map a deviation from the personal baseline to a 0-100 score where "normal for you" ≈ 88,
- * one SD better = 100 and every SD worse costs 30 points (−1 SD → 58, −2 SD → 28).
- * `z` must already be oriented so that positive = better.
+ * Readiness scale, shared by every component: 75 = your usual level, each standard deviation of difference
+ * from your own baseline is worth 15 points (+1 SD → 90, −1 SD → 60, −2 SD → 45). `z` oriented so positive = better.
  */
-export const baselineScore = (z) => clamp(z >= 0 ? 88 + 12 * Math.min(z, 1) : 88 + 30 * z);
-/** Garmin's stress: ≤ 20 is resting level (100), every point above costs 1.4. */
-export const stressScore = (stress) => clamp(100 - Math.max(0, stress - 20) * 1.4);
+export const zToScore = (z) => (isNum(z) ? clamp(75 + 15 * z) : null);
+/** Sleep length vs need: on target = 100, every missing hour −20, oversleeping beyond need + 1h30 costs a little. */
+const durScore = (h, need) => (isNum(h) ? clamp(100 - Math.max(0, need - h) * 20 - Math.max(0, h - need - 1.5) * 10) : null);
+
+export function readinessBand(score) {
+  if (!isNum(score)) return { label: '—', tone: 'neutral' };
+  if (score >= 85) return { label: 'Sopra la tua norma', tone: 'good' };
+  if (score >= 65) return { label: 'Nella tua norma', tone: 'good' };
+  if (score >= 50) return { label: 'Ridotta', tone: 'warn' };
+  return { label: 'Bassa', tone: 'bad' };
+}
 
 function weighted(parts) {
   const ok = parts.filter(([v]) => isNum(v));
@@ -26,11 +33,34 @@ function weighted(parts) {
   return w ? sum(ok.map(([v, wt]) => v * wt)) / w : null;
 }
 
-function stats(values, minSd) {
-  const m = mean(values);
-  const s = sd(values);
-  return { mean: m, sd: isNum(s) ? Math.max(s, minSd) : minSd };
+function stats(values, minSd, minN = 1) {
+  const v = values.filter(isNum);
+  if (v.length < minN) return { mean: null, sd: minSd, n: v.length };
+  const s = sd(v);
+  return { mean: mean(v), sd: isNum(s) ? Math.max(s, minSd) : minSd, n: v.length };
 }
+
+/** HRV is log-normal: baselines are computed on ln(ms) (Plews, Altini). */
+function lnStats(values) {
+  const v = values.filter((x) => isNum(x) && x > 0).map(Math.log);
+  if (v.length < 7) return null;
+  return { mean: mean(v), sd: Math.max(sd(v) ?? 0, 0.05), n: v.length };
+}
+
+/** Standard normal CDF (Abramowitz-Stegun), used to turn population z-scores into percentiles. */
+const phi = (z) => {
+  const t = 1 / (1 + 0.2316419 * Math.abs(z));
+  const d = 0.3989423 * Math.exp((-z * z) / 2);
+  const p = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
+  return z > 0 ? 1 - p : p;
+};
+const lerp = (x, pts) => {
+  if (x <= pts[0][0]) return pts[0][1];
+  for (let i = 1; i < pts.length; i++) if (x <= pts[i][0]) return pts[i - 1][1] + ((x - pts[i - 1][0]) / (pts[i][0] - pts[i - 1][0])) * (pts[i][1] - pts[i - 1][1]);
+  return pts.at(-1)[1];
+};
+// FRIEND registry (Kaminsky 2015) median VO2max by age, ml/kg/min
+const VO2_MEDIAN = { M: [[25, 48], [35, 42.4], [45, 37.8], [55, 32.6], [65, 28.2], [75, 24.4]], F: [[25, 37.6], [35, 30.9], [45, 27.9], [55, 24.2], [65, 20.7], [75, 18.3]] };
 
 // --------------------------------------------------------------------- running science
 const vo2Cost = (v) => -4.6 + 0.182258 * v + 0.000104 * v * v; // Daniels, v in m/min
@@ -111,17 +141,22 @@ function enrich(a, prof) {
 }
 
 // --------------------------------------------------------------------- main
-export function computeAnalytics(dataset, { rangeDays = 30, settings = {}, overrides = {} } = {}) {
+export function computeAnalytics(dataset, { rangeDays: rangeIn = 30, settings = {}, overrides = {} } = {}) {
   const today = dataset.today;
-  const rangeStart = addDays(today, -(rangeDays - 1));
   const need = Number(settings.sleepNeedH) || 8;
+
+  // ---- range: a number of days, or 'max' = every day the browser has
+  const firstWithData = (dataset.days ?? []).find((d) => isNum(d.hrv) || isNum(d.rhr) || d.sleep || isNum(d.steps))?.date;
+  const isMax = rangeIn === 'max';
+  const rangeDays = isMax ? Math.max(30, firstWithData ? diffDays(today, firstWithData) + 1 : 30) : Number(rangeIn) || 30;
+  const rangeStart = addDays(today, -(rangeDays - 1));
+  const rangeLabel = isMax ? `tutto lo storico (${rangeDays} gg)` : `ultimi ${rangeDays} giorni`;
 
   // ---- day rows, gap-filled
   const byDate = new Map((dataset.days ?? []).map((d) => [d.date, d]));
   const firstDay = dataset.days?.[0]?.date ?? rangeStart;
   const allDates = dateRange(firstDay < rangeStart ? firstDay : rangeStart, today);
   const rows = allDates.map((date) => byDate.get(date) ?? { date, sleep: null });
-  const idxOf = new Map(rows.map((r, i) => [r.date, i]));
   const inRange = (date) => date >= rangeStart && date <= today;
 
   // ---- HR profile
@@ -136,120 +171,7 @@ export function computeAnalytics(dataset, { rangeDays = 30, settings = {}, overr
   const acts = rawActs.map((a) => enrich(a, prof));
   const actsInRange = acts.filter((a) => inRange(a.date));
 
-  // ---- readiness per day (baseline = previous 30 days)
-  const readinessAt = (i) => {
-    const d = rows[i];
-    const prev = rows.slice(Math.max(0, i - 30), i);
-    const hb = stats(prev.map((r) => r.hrv), 3);
-    const rb = stats(prev.map((r) => r.rhr), 1.5);
-    const hrvS = isNum(d.hrv) && isNum(hb.mean) ? baselineScore((d.hrv - hb.mean) / hb.sd) : null;
-    const rhrS = isNum(d.rhr) && isNum(rb.mean) ? baselineScore(-(d.rhr - rb.mean) / rb.sd) : null;
-    const autonomic = weighted([[hrvS, 0.7], [rhrS, 0.3]]);
-    // Garmin sleep score 80 ("good") → 88, 90+ → ~100
-    const sleepS = isNum(d.sleep?.score) ? clamp(d.sleep.score * 1.1) : d.sleep?.total ? clamp((d.sleep.total / 3600 / need) * 100) : null;
-    const stressVal = d.stress ?? rows[i - 1]?.stress;
-    const stressS = isNum(stressVal) ? stressScore(stressVal) : null;
-    const bbS = isNum(d.bbMax) ? clamp(d.bbMax * 1.05) : null;
-    return {
-      date: d.date,
-      score: round(weighted([[autonomic, 0.35], [sleepS, 0.25], [stressS, 0.2], [bbS, 0.2]])),
-      hrv: round(hrvS), rhr: round(rhrS), autonomic: round(autonomic), sleep: round(sleepS), stress: round(stressS), bb: round(bbS),
-      hrvZ: isNum(d.hrv) && isNum(hb.mean) ? (d.hrv - hb.mean) / hb.sd : null,
-      rhrDelta: isNum(d.rhr) && isNum(rb.mean) ? d.rhr - rb.mean : null,
-      hrvBase: hb, rhrBase: rb,
-    };
-  };
-  const readinessSeries = rows.map((_, i) => readinessAt(i));
-  let latestIdx = rows.length - 1;
-  while (latestIdx > 0 && !isNum(rows[latestIdx].hrv) && !rows[latestIdx].sleep) latestIdx--;
-  const latest = rows[latestIdx];
-  const ready = readinessSeries[latestIdx];
-  const prev30Ready = readinessSeries.slice(Math.max(0, latestIdx - 30), latestIdx).map((r) => r.score);
-  const readiness = {
-    ...ready,
-    baselineMean: round(mean(prev30Ready)),
-    delta: isNum(ready.score) && isNum(mean(prev30Ready)) ? round(ready.score - mean(prev30Ready)) : null,
-    series: readinessSeries.filter((r) => inRange(r.date)),
-  };
-
-  // ---- longevity (slow-moving composite, 30-day averages)
-  const last30 = rows.slice(-30);
-  const avg = (k) => mean(last30.map((r) => r[k]));
-  const avgSleepH = mean(last30.map((r) => (r.sleep?.total ? r.sleep.total / 3600 : null)));
-  const vo2Current = dataset.profile?.vo2max ?? [...acts].reverse().find((a) => isNum(a.vo2max))?.vo2max ?? null;
-  const longevityParts = {
-    rhr: isNum(avg('rhr')) ? clamp(((75 - avg('rhr')) / 35) * 100) : null,
-    hrv: isNum(avg('hrv')) ? clamp(((avg('hrv') - 20) / 60) * 100) : null,
-    sleep: isNum(avgSleepH) ? clamp(100 - Math.max(0, Math.abs(avgSleepH - 8) - 0.5) * 35) : null,
-    steps: isNum(avg('steps')) ? clamp((avg('steps') / 10000) * 100) : null,
-    vo2max: isNum(vo2Current) ? clamp(((vo2Current - 30) / 30) * 100) : null,
-    stress: isNum(avg('stress')) ? clamp(100 - (avg('stress') - 15) * 2) : null,
-  };
-  const longevity = {
-    score: round(mean(Object.values(longevityParts))),
-    parts: Object.fromEntries(Object.entries(longevityParts).map(([k, v]) => [k, round(v)])),
-    averages: { rhr: round(avg('rhr'), 1), hrv: round(avg('hrv'), 1), sleepH: round(avgSleepH, 1), steps: round(avg('steps')), stress: round(avg('stress')), vo2max: vo2Current },
-  };
-
-  // ---- HRV / RHR matrix
-  const hrvRhr = rows
-    .map((r, i) => {
-      const b = readinessSeries[i];
-      return {
-        date: r.date,
-        hrv: r.hrv ?? null,
-        rhr: r.rhr ?? null,
-        lo: isNum(b.hrvBase.mean) ? round(b.hrvBase.mean - b.hrvBase.sd, 1) : null,
-        hi: isNum(b.hrvBase.mean) ? round(b.hrvBase.mean + b.hrvBase.sd, 1) : null,
-        base: round(b.hrvBase.mean, 1),
-        rhrBase: round(b.rhrBase.mean, 1),
-        status: r.hrvStatus ?? null,
-      };
-    })
-    .filter((r) => inRange(r.date));
-  const hrvTrend = (() => {
-    const lastN = rows.slice(latestIdx - 2, latestIdx + 1);
-    const b = readinessSeries[latestIdx].hrvBase.mean;
-    const below = lastN.every((r) => isNum(r.hrv) && isNum(b) && r.hrv < b);
-    return { consecutiveBelow: below ? lastN.length : 0, pct3d: pctChange(mean(lastN.map((r) => r.hrv)), b) };
-  })();
-
-  // ---- sleep architecture & debt
-  const sleepRows = rows.filter((r) => inRange(r.date)).map((r) => {
-    const s = r.sleep;
-    const h = (x) => (isNum(x) ? round(x / 3600, 2) : null);
-    return {
-      date: r.date,
-      deep: h(s?.deep), rem: h(s?.rem), light: h(s?.light), awake: h(s?.awake), total: h(s?.total),
-      score: s?.score ?? null,
-      efficiency: s?.total ? round((s.total / (s.total + (s.awake || 0))) * 100, 1) : null,
-    };
-  });
-  const last7Sleep = rows.slice(latestIdx - 6, latestIdx + 1).map((r) => (r.sleep?.total ? r.sleep.total / 3600 : null));
-  const sleepDeficit = sum(last7Sleep.filter(isNum).map((h) => need - h));
-  const sleep = {
-    rows: sleepRows,
-    need,
-    debt7: round(Math.max(0, sleepDeficit), 1),
-    surplus7: round(Math.max(0, -sleepDeficit), 1),
-    avg7: round(mean(last7Sleep), 2),
-    efficiency7: round(mean(sleepRows.slice(-7).map((r) => r.efficiency)), 1),
-    score7: round(mean(sleepRows.slice(-7).map((r) => r.score))),
-    deepPct7: round(mean(sleepRows.slice(-7).map((r) => (r.total ? (r.deep / r.total) * 100 : null))), 1),
-    remPct7: round(mean(sleepRows.slice(-7).map((r) => (r.total ? (r.rem / r.total) * 100 : null))), 1),
-    lastNight: latest.sleep ? { ...latest.sleep, hours: round(latest.sleep.total / 3600, 2) } : null,
-    ...sleepPatterns(rows.slice(Math.max(0, latestIdx - 13), latestIdx + 1), rows.filter((r) => inRange(r.date))),
-  };
-
-  // ---- autonomic nervous system: intraday + daily
-  const ans = {
-    intraday: buildIntraday(dataset.intraday, byDate.get(dataset.intraday?.date)),
-    daily: rows.filter((r) => inRange(r.date)).map((r) => ({
-      date: r.date, stress: r.stress ?? null, bbCharged: r.bbCharged ?? null, bbDrained: r.bbDrained ?? null, bbMax: r.bbMax ?? null,
-    })),
-  };
-
-  // ---- PMC (CTL 42d, ATL 7d, TSB, ACWR)
+  // ---- PMC (CTL 42d, ATL 7d, TSB, ACWR): computed first, yesterday's load is a readiness component
   const loadByDate = new Map();
   for (const a of acts) loadByDate.set(a.date, (loadByDate.get(a.date) ?? 0) + a.pmcLoad);
   const pmcStart = acts.length && acts[0].date < addDays(rangeStart, -42) ? acts[0].date : addDays(rangeStart, -42);
@@ -267,6 +189,170 @@ export function computeAnalytics(dataset, { rangeDays = 30, settings = {}, overr
     const c28 = sum(dailyLoads.slice(Math.max(0, i - 27), i + 1)) / 28;
     return { date, load: round(load), ctl: round(ctl, 1), atl: round(atl, 1), tsb: round(ctl - atl, 1), acwr: c28 > 5 && i >= 27 ? round(a7 / c28, 2) : null };
   });
+  const pmcByDate = new Map(pmcAll.map((r) => [r.date, r]));
+
+  // ---- readiness: "how recovered am I this morning, compared with my own normal?"
+  // Baselines = your previous 60 days. Weights: nervous system 40%, sleep 30%, yesterday's stress 15%, training load 15%.
+  const BASE_DAYS = 60;
+  const lnOf = (r) => (r?.hrv > 0 ? Math.log(r.hrv) : null);
+  const hrsOf = (r) => (r?.sleep?.total ? r.sleep.total / 3600 : null);
+  const readinessAt = (i) => {
+    const d = rows[i];
+    const prev = rows.slice(Math.max(0, i - BASE_DAYS), i);
+    const hb = lnStats(prev.map((r) => r.hrv));
+    const rb = stats(prev.map((r) => r.rhr), 1.5, 7);
+    const hrvZ = isNum(lnOf(d)) && hb ? (lnOf(d) - hb.mean) / hb.sd : null;
+    const week = rows.slice(Math.max(0, i - 6), i + 1).map(lnOf).filter(isNum);
+    const hrv7 = week.length >= 3 ? mean(week) : null;
+    // the 7-day mean is compared with the "smallest worthwhile change" band (±0.5 SD): one SWC away = 1 unit
+    const hrv7Z = isNum(hrv7) && hb ? (hrv7 - hb.mean) / (0.5 * hb.sd) : null;
+    const rhrZ = isNum(d.rhr) && isNum(rb.mean) ? -(d.rhr - rb.mean) / rb.sd : null;
+    const autonomic = weighted([[zToScore(hrv7Z), 0.4], [zToScore(hrvZ), 0.3], [zToScore(rhrZ), 0.3]]);
+
+    const last3 = rows.slice(Math.max(0, i - 2), i + 1).map(hrsOf).filter(isNum);
+    const sleepS = weighted([[d.sleep?.score ?? null, 0.4], [durScore(hrsOf(d), need), 0.35], [last3.length >= 2 ? durScore(mean(last3), need) : null, 0.25]]);
+
+    const y = rows[i - 1];
+    const sb = stats(rows.slice(Math.max(0, i - 1 - BASE_DAYS), Math.max(0, i - 1)).map((r) => r.stress), 4, 7);
+    const stressZ = isNum(y?.stress) && isNum(sb.mean) ? -(y.stress - sb.mean) / sb.sd : null;
+
+    const p = pmcByDate.get(addDays(d.date, -1));
+    const loadRatio = p && (p.ctl >= 5 || p.atl >= 5) ? p.atl / Math.max(p.ctl, 10) : null;
+    const loadS = isNum(loadRatio) ? clamp(75 - (loadRatio - 1) * 60, 0, 90) : null;
+
+    const stressS = zToScore(stressZ);
+    const hbMs = hb ? { mean: Math.exp(hb.mean), sd: Math.exp(hb.mean) * hb.sd, lo: Math.exp(hb.mean - hb.sd), hi: Math.exp(hb.mean + hb.sd), swcLo: Math.exp(hb.mean - 0.5 * hb.sd), swcHi: Math.exp(hb.mean + 0.5 * hb.sd), n: hb.n } : { mean: null, sd: null };
+    return {
+      date: d.date,
+      score: round(weighted([[autonomic, 0.4], [sleepS, 0.3], [stressS, 0.15], [loadS, 0.15]])),
+      autonomic: round(autonomic), sleep: round(sleepS), stress: round(stressS), load: round(loadS),
+      hrv: round(zToScore(hrvZ)), hrv7: round(zToScore(hrv7Z)), rhr: round(zToScore(rhrZ)),
+      hrvZ, hrv7Z, rhrZ, stressZ, loadRatio: round(loadRatio, 2),
+      hrv7ms: isNum(hrv7) ? round(Math.exp(hrv7), 1) : null,
+      hrvPct: isNum(hrvZ) ? round((d.hrv / hbMs.mean - 1) * 100) : null,
+      rhrDelta: isNum(d.rhr) && isNum(rb.mean) ? d.rhr - rb.mean : null,
+      stressYesterday: y?.stress ?? null, stressBase: sb.mean,
+      hrvBase: hbMs, rhrBase: rb,
+    };
+  };
+  const readinessSeries = rows.map((_, i) => readinessAt(i));
+  let latestIdx = rows.length - 1;
+  while (latestIdx > 0 && !isNum(rows[latestIdx].hrv) && !rows[latestIdx].sleep) latestIdx--;
+  const latest = rows[latestIdx];
+  const ready = readinessSeries[latestIdx];
+  const prev30Ready = readinessSeries.slice(Math.max(0, latestIdx - 30), latestIdx).map((r) => r.score);
+  const rangeReady = readinessSeries.filter((r) => inRange(r.date));
+  const readiness = {
+    ...ready,
+    band: readinessBand(ready.score),
+    baselineMean: round(mean(prev30Ready)),
+    delta: isNum(ready.score) && isNum(mean(prev30Ready)) ? round(ready.score - mean(prev30Ready)) : null,
+    series: rangeReady,
+    periodMean: round(mean(rangeReady.map((r) => r.score))),
+    lowDays: rangeReady.filter((r) => isNum(r.score) && r.score < 50).length,
+    highDays: rangeReady.filter((r) => isNum(r.score) && r.score >= 85).length,
+  };
+
+  // ---- longevity: long-term habits and fitness against population evidence (not against yourself)
+  const vo2Current = dataset.profile?.vo2max ?? [...acts].reverse().find((a) => isNum(a.vo2max))?.vo2max ?? null;
+  const longevity = longevityIndex({ rows, acts, today, rangeDays, need, vo2: vo2Current, settings, profile: dataset.profile });
+
+  // ---- HRV / RHR matrix: daily values, 7-day rolling HRV and its normal band (baseline ± 0.5 SD)
+  const hrvRhr = rows
+    .map((r, i) => {
+      const b = readinessSeries[i];
+      return {
+        date: r.date,
+        hrv: r.hrv ?? null,
+        hrv7: b.hrv7ms,
+        rhr: r.rhr ?? null,
+        lo: round(b.hrvBase.swcLo, 1) ?? null,
+        hi: round(b.hrvBase.swcHi, 1) ?? null,
+        base: round(b.hrvBase.mean, 1),
+        rhrBase: round(b.rhrBase.mean, 1),
+        status: r.hrvStatus ?? null,
+      };
+    })
+    .filter((r) => inRange(r.date));
+  const hrvTrend = (() => {
+    const lastN = rows.slice(Math.max(0, latestIdx - 2), latestIdx + 1);
+    const b = readinessSeries[latestIdx].hrvBase.mean;
+    const below = lastN.every((r) => isNum(r.hrv) && isNum(b) && r.hrv < b);
+    const t = (key) => {
+      const reg = linreg(hrvRhr.map((r, i) => ({ x: i, y: r[key] })));
+      return reg ? reg.slope * (hrvRhr.length - 1) : null;
+    };
+    const hrvAvg = mean(hrvRhr.map((r) => r.hrv));
+    return {
+      consecutiveBelow: below ? lastN.length : 0,
+      pct3d: pctChange(mean(lastN.map((r) => r.hrv)), b),
+      period: {
+        hrv: round(hrvAvg, 1),
+        rhr: round(mean(hrvRhr.map((r) => r.rhr)), 1),
+        hrvChangePct: isNum(t('hrv')) && hrvAvg ? round((t('hrv') / hrvAvg) * 100) : null,
+        rhrChange: round(t('rhr'), 1),
+      },
+    };
+  })();
+
+  // ---- sleep architecture & debt (debt is always the last 7 nights; the rest follows the selected range)
+  const sleepRows = rows.filter((r) => inRange(r.date)).map((r) => {
+    const s = r.sleep;
+    const h = (x) => (isNum(x) ? round(x / 3600, 2) : null);
+    return {
+      date: r.date,
+      deep: h(s?.deep), rem: h(s?.rem), light: h(s?.light), awake: h(s?.awake), total: h(s?.total),
+      score: s?.score ?? null,
+      efficiency: s?.total ? round((s.total / (s.total + (s.awake || 0))) * 100, 1) : null,
+    };
+  });
+  const last7Sleep = rows.slice(Math.max(0, latestIdx - 6), latestIdx + 1).map(hrsOf);
+  const sleepDeficit = sum(last7Sleep.filter(isNum).map((h) => need - h));
+  const pctOf = (rs, k) => round(mean(rs.map((r) => (r.total ? (r[k] / r.total) * 100 : null))), 1);
+  const last7Rows = sleepRows.slice(-7);
+  const sleep = {
+    rows: sleepRows,
+    need,
+    debt7: round(Math.max(0, sleepDeficit), 1),
+    surplus7: round(Math.max(0, -sleepDeficit), 1),
+    avg7: round(mean(last7Sleep), 2),
+    efficiency7: round(mean(last7Rows.map((r) => r.efficiency)), 1),
+    score7: round(mean(last7Rows.map((r) => r.score))),
+    deepPct7: pctOf(last7Rows, 'deep'),
+    remPct7: pctOf(last7Rows, 'rem'),
+    period: {
+      avg: round(mean(sleepRows.map((r) => r.total)), 2),
+      score: round(mean(sleepRows.map((r) => r.score))),
+      efficiency: round(mean(sleepRows.map((r) => r.efficiency)), 1),
+      deepPct: pctOf(sleepRows, 'deep'),
+      remPct: pctOf(sleepRows, 'rem'),
+      nights: sleepRows.filter((r) => r.total).length,
+      shortNights: sleepRows.filter((r) => r.total && r.total < 6).length,
+    },
+    lastNight: latest.sleep ? { ...latest.sleep, hours: round(latest.sleep.total / 3600, 2) } : null,
+    ...sleepPatterns(rows.slice(Math.max(0, latestIdx - Math.max(7, Math.min(rangeDays, 90)) + 1), latestIdx + 1), rows.filter((r) => inRange(r.date))),
+    shortNights14: rows.slice(Math.max(0, latestIdx - 13), latestIdx + 1).filter((r) => r.sleep?.total && r.sleep.total < 6 * 3600).length,
+  };
+
+  // ---- autonomic nervous system: intraday + daily
+  const ansDaily = rows.filter((r) => inRange(r.date)).map((r) => ({
+    date: r.date, stress: r.stress ?? null, bbCharged: r.bbCharged ?? null, bbDrained: r.bbDrained ?? null, bbMax: r.bbMax ?? null,
+  }));
+  const complete = ansDaily.filter((r) => r.date < today);
+  const ans = {
+    intraday: buildIntraday(dataset.intraday, byDate.get(dataset.intraday?.date)),
+    daily: ansDaily,
+    period: {
+      stress: round(mean(complete.map((r) => r.stress))),
+      charged: round(mean(complete.map((r) => r.bbCharged))),
+      drained: round(mean(complete.map((r) => r.bbDrained))),
+      bbMax: round(mean(complete.map((r) => r.bbMax))),
+      deficitDays: complete.filter((r) => isNum(r.bbCharged) && isNum(r.bbDrained) && r.bbDrained > r.bbCharged + 5).length,
+      days: complete.filter((r) => isNum(r.bbCharged) || isNum(r.stress)).length,
+    },
+  };
+
+  // ---- PMC views
   const pmcRows = pmcAll.filter((r) => inRange(r.date));
   // today is usually not over: until something is logged, report the last completed day
   const pmcLatest = pmcAll.at(-1)?.load > 0 || pmcAll.length < 2 ? pmcAll.at(-1) : pmcAll.at(-2);
@@ -390,9 +476,13 @@ export function computeAnalytics(dataset, { rangeDays = 30, settings = {}, overr
   };
 
   const illness = detectIllness(rows, acts, { sensitivity: settings.illnessSensitivity, today });
+  // the symptom radar follows the selected range, with at least 30 days (episodes need context)
+  const illStart = addDays(today, -(Math.max(30, rangeDays) - 1));
+  const illEpisodes = illness.episodes.filter((e) => e.end >= illStart);
+  illness.view = { start: illStart, days: Math.max(30, rangeDays), series: illness.series.filter((d) => d.date >= illStart), episodes: illEpisodes, stats: episodeStats(illEpisodes) };
 
   const result = {
-    today, rangeStart, rangeDays, source: dataset.source, scenario: dataset.scenario, illness, hrZoneCfg,
+    today, rangeStart, rangeDays, rangeLabel, isMax, source: dataset.source, scenario: dataset.scenario, illness, hrZoneCfg,
     rowsAll: rows, readinessAll: readinessSeries,
     profile: prof,
     latest, latestDate: latest.date,
@@ -527,3 +617,108 @@ function buildIntraday(intraday, dayRow) {
   return { rows, windows, nightStress, bbGain, sleepFrom, sleepTo, dayMean: round(dayMean), current: rows.at(-1) };
 }
 
+
+// --------------------------------------------------------------------- longevity
+/**
+ * Long-term health index: each marker is scored 0-100 against population evidence (0 = high-risk band,
+ * 100 = lowest-risk band) and weighted by how strongly it predicts all-cause mortality in the literature.
+ * Window = selected range, at least 30 days (these are habits, a single week means little).
+ */
+function longevityIndex({ rows, acts, today, rangeDays, need, vo2, settings, profile }) {
+  const days = Math.max(30, rangeDays);
+  const start = addDays(today, -days);
+  const done = rows.filter((r) => r.date >= start && r.date < today); // complete days
+  const nights = rows.filter((r) => r.date > start && r.date <= today); // nights ending inside the window
+  const ageSet = Number(settings.age) || profile?.age || null;
+  const sexSet = settings.sex || profile?.sex || null;
+  const age = ageSet ?? 40;
+  const avg = (k) => mean(done.map((r) => r[k]));
+  const perWeek = (n) => n / (days / 7);
+
+  // cardiorespiratory fitness: percentile among people of your age and sex (FRIEND registry)
+  const medianFor = (sx) => lerp(age, VO2_MEDIAN[sx]);
+  const vo2Med = sexSet ? medianFor(sexSet) : (medianFor('M') + medianFor('F')) / 2;
+  const vo2Score = isNum(vo2) ? phi((vo2 - vo2Med) / (0.2 * vo2Med)) * 100 : null;
+
+  // weekly activity minutes, moderate + 2 × vigorous (WHO 150-300). Older cached days lack Garmin's figure → activities
+  const withIm = done.filter((r) => isNum(r.intensityMin));
+  const hasActs = acts.length > 0; // no activity at all = nothing synced, not "zero exercise"
+  let imWeek = null;
+  let imSource = 'Garmin';
+  if (done.length && withIm.length >= done.length * 0.6) imWeek = (sum(withIm.map((r) => r.intensityMin)) / withIm.length) * 7;
+  else if (hasActs) {
+    imSource = 'attività registrate';
+    const mins = sum(acts.filter((a) => a.date >= start && a.date < today).map((a) => {
+      const m = (a.duration || 0) / 60;
+      if (a.kind === 'strength') return m;
+      return (a.hrr ?? 0) >= 0.6 ? 2 * m : (a.hrr ?? 0) >= 0.4 ? m : 0.5 * m;
+    }));
+    imWeek = perWeek(mins);
+  }
+  const imScore = isNum(imWeek) ? lerp(imWeek, [[0, 0], [75, 40], [150, 70], [300, 90], [450, 100]]) : null;
+
+  const steps = avg('steps');
+  const stepsPlateau = age >= 60 ? 7000 : 9000; // Paluch 2022: benefit levels off at 6-8k (≥ 60 y) / 8-10k steps
+  const stepsScore = isNum(steps) ? clamp(((steps - 2500) / (stepsPlateau - 2500)) * 100) : null;
+
+  const strengthWeek = perWeek(acts.filter((a) => a.kind === 'strength' && a.date >= start && a.date < today).length);
+  const strengthScore = hasActs ? lerp(strengthWeek, [[0, 0], [1, 60], [2, 100]]) : null;
+
+  const rhr = avg('rhr');
+  const rhrScore = isNum(rhr) ? phi((72 - rhr) / 11) * 100 : null; // adult population ≈ 72 ± 11 bpm
+
+  const hrvVals = done.map((r) => r.hrv).filter((x) => isNum(x) && x > 0);
+  const hrvG = hrvVals.length >= 7 ? Math.exp(mean(hrvVals.map(Math.log))) : null;
+  const hrvExpected = Math.exp(4.58 - 0.0182 * age); // nightly RMSSD declines ~1.8%/year
+  const hrvScore = isNum(hrvG) ? phi(Math.log(hrvG / hrvExpected) / 0.4) * 100 : null;
+
+  const sleepH = mean(nights.map((r) => (r.sleep?.total ? r.sleep.total / 3600 : null)));
+  const sleepDurScore = isNum(sleepH) ? clamp(sleepH < 7 ? 100 - (7 - sleepH) * 35 : sleepH > 8.5 ? 100 - (sleepH - 8.5) * 25 : 100) : null;
+  // regularity: SD of the sleep midpoint (Windred 2024: regularity predicts mortality better than duration)
+  const mids = nights
+    .map((r) => (isNum(r.sleep?.start) && isNum(r.sleep?.end) ? new Date((r.sleep.start + r.sleep.end) / 2) : null))
+    .filter(Boolean)
+    .map((d) => {
+      const h = d.getUTCHours() + d.getUTCMinutes() / 60;
+      return h < 12 ? h + 24 : h;
+    });
+  const midSd = mids.length >= 5 ? sd(mids) * 60 : null;
+  const regScore = isNum(midSd) ? lerp(midSd, [[30, 100], [60, 75], [90, 45], [120, 20], [180, 0]]) : null;
+
+  const stress = avg('stress');
+  const stressScore = isNum(stress) ? clamp(100 - Math.max(0, stress - 25) * 2.5) : null;
+
+  const parts = [
+    { key: 'vo2max', label: 'Fitness cardiorespiratoria (VO2max)', weight: 25, score: vo2Score, value: isNum(vo2) ? `${fmt(vo2, 1)} ml/kg/min` : null,
+      ref: `mediana per la tua età ${fmt(vo2Med, 1)}`, why: 'Il predittore di mortalità più forte: passare dal 25% meno in forma alla media dimezza circa il rischio (Mandsager 2018). Punteggio = percentile tra i coetanei.' },
+    { key: 'activity', label: 'Minuti di attività', weight: 15, score: imScore, value: isNum(imWeek) ? `${fmt(imWeek)} min/sett` : null,
+      ref: 'OMS 150-300 (vigorosi ×2)', why: `Moderati + 2 × vigorosi a settimana (fonte: ${imSource}). Il beneficio cresce fino a 3-5 volte il minimo OMS (Arem 2015).` },
+    { key: 'steps', label: 'Passi', weight: 10, score: stepsScore, value: isNum(steps) ? `${fmt(steps)} al giorno` : null,
+      ref: `${fmt(stepsPlateau)}+ al giorno`, why: 'Il rischio scende fino a 8-10 mila passi (6-8 mila dopo i 60 anni), poi si stabilizza (Paluch 2022).' },
+    { key: 'strength', label: 'Forza', weight: 10, score: strengthScore, value: hasActs ? `${fmt(strengthWeek, 1)} sedute/sett` : null,
+      ref: '2 sedute/sett', why: 'Allenare i muscoli 2 volte a settimana riduce la mortalità del 10-20%, indipendentemente dall’aerobico (Momma 2022).' },
+    { key: 'rhr', label: 'FC a riposo', weight: 10, score: rhrScore, value: isNum(rhr) ? `${fmt(rhr, 1)} bpm` : null,
+      ref: 'popolazione 72 bpm', why: 'Ogni +10 bpm a riposo corrisponde a circa +10-15% di rischio (Zhang 2016). Punteggio = percentile.' },
+    { key: 'sleepDur', label: 'Durata del sonno', weight: 10, score: sleepDurScore, value: isNum(sleepH) ? fmtH(sleepH) : null,
+      ref: '7h–8h30', why: 'Relazione a U: rischio minimo tra 7 e 8 ore, sale sia sotto le 6 sia sopra le 9 (Cappuccio 2010).' },
+    { key: 'sleepReg', label: 'Regolarità del sonno', weight: 10, score: regScore, value: isNum(midSd) ? `± ${fmt(midSd)} min` : null,
+      ref: '± ≤ 30 min', why: 'Variabilità dell’orario di metà sonno. Dormire a orari regolari predice la mortalità più della durata (Windred 2024).' },
+    { key: 'hrv', label: 'HRV', weight: 5, score: hrvScore, value: isNum(hrvG) ? `${fmt(hrvG)} ms` : null,
+      ref: `atteso per la tua età ~${fmt(hrvExpected)} ms`, actionable: false, why: 'Un tono parasimpatico più alto si associa a minor rischio cardiovascolare; dipende molto da età e genetica, peso basso.' },
+    { key: 'stress', label: 'Stress cronico', weight: 5, score: stressScore, value: isNum(stress) ? `${fmt(stress)} medio` : null,
+      ref: '≤ 25 (riposo)', actionable: false, why: 'Stress fisiologico Garmin medio: indicatore indiretto del carico allostatico, evidenza più debole.' },
+  ].map((p) => ({ ...p, score: round(p.score) }));
+  const available = parts.filter((p) => isNum(p.score));
+  const score = round(weighted(available.map((p) => [p.score, p.weight])));
+  // levers: habits you can act on directly (HRV and stress follow from the others), clearly below the low-risk band
+  const levers = available.filter((p) => p.actionable !== false && p.score < 70).sort((x, y) => (100 - y.score) * y.weight - (100 - x.score) * x.weight).slice(0, 2);
+  return {
+    score,
+    parts,
+    levers,
+    window: days,
+    age: ageSet, sex: sexSet, assumed: { age: !ageSet, sex: !sexSet },
+    coverage: sum(available.map((p) => p.weight)),
+    averages: { rhr: round(rhr, 1), hrv: round(hrvG, 1), sleepH: round(sleepH, 2), steps: round(steps), stress: round(stress), vo2max: vo2, activityMinWeek: round(imWeek), strengthWeek: round(strengthWeek, 1), sleepMidSdMin: round(midSd) },
+  };
+}

@@ -30,8 +30,6 @@ function NowCard({ a, sensitivity, onSensitivity, history }) {
         ))}
       </div>
       <div className="grid grid-cols-2 gap-4">
-        <Kpi label="FC riposo vs base" value={signed(t?.rhrDelta, 1)} unit="bpm" tone={(t?.rhrDelta ?? 0) >= 3 ? 'bad' : undefined} />
-        <Kpi label="HRV vs base" value={signed(t?.hrvPct)} unit="%" tone={(t?.hrvPct ?? 0) <= -12 ? 'bad' : undefined} />
         <Kpi label="Giorni nella norma" value={il.stats.healthyStreak} />
         <Kpi label="Ultimo episodio" value={il.stats.lastEpisodeAgo != null ? `${il.stats.lastEpisodeAgo} gg fa` : '—'} />
       </div>
@@ -54,35 +52,34 @@ function NowCard({ a, sensitivity, onSensitivity, history }) {
 
 function TimelineCard({ a }) {
   const il = a.illness;
-  const rows = il.series.filter((d) => d.index != null);
+  const rows = il.view.series.filter((d) => d.index != null);
   const idx = new Map(rows.map((r, i) => [r.date, i]));
-  const windows = il.episodes
+  const windows = il.view.episodes
     .map((e) => ({ from: idx.get(e.start), to: idx.get(e.end), color: TONE_HEX[e.tone] }))
     .filter((w) => w.from != null && w.to != null);
   return (
-    <Card title="Radar sintomi · timeline" subtitle="Indice giornaliero e scarti dalla baseline · episodi evidenziati" icon={History} insightKey="illnessTimeline" className="lg:col-span-2">
+    <Card title="Radar sintomi · timeline" subtitle={`Indice giornaliero di malessere · episodi evidenziati · ultimi ${il.view.days} giorni`} icon={History} insightKey="illnessTimeline" className="lg:col-span-2">
       <TimeChart rows={rows} height={180} left={{ min: 0, max: 100, label: 'indice' }} windows={windows}
         refLines={[{ y: 50, color: C.crimson, label: 'soglia' }]}
         series={[{ key: 'index', label: 'Indice malessere', type: 'bar', color: C.slate }]}
         barColor={(r) => (r.flagged ? C.crimson : r.index >= 35 ? C.amber : '#334155')}
-        tooltipExtra={(r) => r.signals?.length ? <div className="mt-1 text-[10px] text-gray-400">{r.signals.join(' · ')}</div> : null} />
-      <div className="mt-4 text-[10px] uppercase tracking-[0.16em] text-gray-500">Scarti dalla baseline</div>
-      <TimeChart rows={rows} height={150} left={{ label: 'bpm' }} right={{ label: 'HRV %' }} windows={windows}
-        refLines={[{ y: 0, color: C.slate }]}
-        series={[
-          { key: 'rhrDelta', label: 'FC riposo', color: C.crimson, width: 1.5, format: (v) => `${signed(v, 1)} bpm` },
-          { key: 'hrvPct', label: 'HRV', axis: 'right', color: C.cyan, width: 1.5, format: (v) => `${signed(v)}%` },
-        ]} />
-      <Legend items={[{ label: 'Giorno anomalo', color: C.crimson }, { label: 'Vicino alla soglia', color: C.amber }, { label: 'FC riposo Δ', color: C.crimson }, { label: 'HRV Δ%', color: C.cyan }]} />
+        tooltipExtra={(r) => (
+          <div className="mt-1 text-[10px] text-gray-400">
+            {r.signals?.length ? <div>{r.signals.join(' · ')}</div> : null}
+            {(r.rhrDelta != null || r.hrvPct != null) && <div className="num">FC riposo {signed(r.rhrDelta, 1)} bpm · HRV {signed(r.hrvPct)}%</div>}
+          </div>
+        )} />
+      <Legend items={[{ label: 'Giorno anomalo', color: C.crimson }, { label: 'Vicino alla soglia', color: C.amber }, { label: 'Nella norma', color: '#334155' }]} />
+      <p className="mt-2 text-[11px] text-gray-500">L’andamento di HRV e FC a riposo rispetto alla tua normalità è nella card “HRV & FC a riposo” qui sopra; passa il mouse su una barra per gli scarti di quel giorno.</p>
     </Card>
   );
 }
 
 function EpisodesCard({ a }) {
-  const eps = a.illness.episodes;
+  const eps = a.illness.view.episodes;
   return (
-    <Card title="Radar sintomi · episodi" subtitle="Periodi in cui il tuo fisico stava probabilmente male" icon={HeartCrack} info="illnessEpisodes" className="lg:col-span-2">
-      {!eps.length && <p className="py-6 text-center text-sm text-gray-500">Nessun episodio con la sensibilità attuale. Prova “alta” per vedere anche i segnali deboli.</p>}
+    <Card title="Radar sintomi · episodi" subtitle={`Periodi in cui il tuo fisico stava probabilmente male · ultimi ${a.illness.view.days} giorni`} icon={HeartCrack} info="illnessEpisodes" className="lg:col-span-2">
+      {!eps.length && <p className="py-6 text-center text-sm text-gray-500">Nessun episodio nel periodo con la sensibilità attuale. Prova “alta” o un periodo più lungo (Max).</p>}
       <div className="scrollbar-thin max-h-[34rem] space-y-3 overflow-y-auto pr-1">
         {eps.map((e) => {
           const t = TONE[e.tone];
@@ -122,10 +119,10 @@ function EpisodesCard({ a }) {
 }
 
 function PatternsCard({ a }) {
-  const st = a.illness.stats;
-  const byType = Object.entries(EPISODE_TYPES).map(([k, v]) => ({ ...v, key: k, n: a.illness.episodes.filter((e) => e.type === k).length }));
+  const st = a.illness.view.stats;
+  const byType = Object.entries(EPISODE_TYPES).map(([k, v]) => ({ ...v, key: k, n: a.illness.view.episodes.filter((e) => e.type === k).length }));
   return (
-    <Card title="Radar sintomi · trigger" subtitle="Cosa precede i tuoi episodi" icon={Microscope} insightKey="illnessPatterns">
+    <Card title="Radar sintomi · trigger" subtitle={`Cosa precede i tuoi episodi · ultimi ${a.illness.view.days} giorni`} icon={Microscope} insightKey="illnessPatterns">
       <div className="grid grid-cols-2 gap-4">
         <Kpi label="Episodi" value={st.count} />
         <Kpi label="Durata media" value={fmt(st.avgDays, 1)} unit="gg" />

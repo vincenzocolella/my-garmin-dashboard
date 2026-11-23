@@ -211,7 +211,8 @@ export function runsOverview(a) {
  */
 export function hrPaceTrend(a) {
   const cfg = a.hrZoneCfg;
-  const runs = a.activities.filter((r) => r.kind === 'run' && diffDays(a.today, r.date) < 200);
+  const windowDays = Math.max(a.rangeDays, 120);
+  const runs = a.activities.filter((r) => r.kind === 'run' && diffDays(a.today, r.date) < windowDays);
   const pts = [];
   runs.forEach((r) => {
     const laps = fullLaps(r.laps).filter((l) => l[0] >= 800 && isNum(l[2]));
@@ -262,12 +263,6 @@ export function hrPaceTrend(a) {
     ? { hr: round(median(recent.map((p) => p.hrAtRef)) - median(before.map((p) => p.hrAtRef)), 1), pace: Math.round(median(recent.map((p) => p.paceAtRef)) - median(before.map((p) => p.paceAtRef))) }
     : null;
 
-  // scatter: earliest third vs latest third of the history
-  const sorted = [...pts].sort((p, q) => (p.date < q.date ? -1 : 1));
-  const third = Math.floor(sorted.length / 3);
-  const early = sorted.slice(0, third);
-  const late = sorted.slice(-third);
-  const span = (xs) => (xs.length ? `${xs[0].date}|${xs.at(-1).date}` : null);
 
   const notes = [];
   if (change) {
@@ -278,7 +273,7 @@ export function hrPaceTrend(a) {
     else if (change.pace >= 5) notes.push({ tone: 'warn', text: `Al limite della Z2 (${refHr} bpm) sei ${change.pace} s/km più lento di 2 mesi fa.` });
   } else notes.push({ tone: 'info', text: 'Servono almeno 3 mesi di corse con FC per il confronto con 2 mesi fa; intanto guarda la tendenza settimanale.' });
 
-  return { series, refPace, refHr, slope: round(slope, 2), change, notes, scatter: { early, late, earlySpan: span(early), lateSpan: span(late) }, points: pts.length };
+  return { series, refPace, refHr, slope: round(slope, 2), change, notes, points: pts.length, windowDays };
 }
 
 const fmtP = (s) => (isNum(s) ? `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}` : '—');

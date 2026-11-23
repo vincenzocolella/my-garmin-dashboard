@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
-import { Activity, ArrowDownUp, HeartPulse, BarChart3, Flag, Gauge, Layers, LineChart, ListOrdered, X } from 'lucide-react';
-import { C, ScatterChart, SplitBar, TimeChart } from '../components/charts/Charts';
+import { Activity, ArrowDownUp, BarChart3, Flag, Gauge, Layers, LineChart, ListOrdered, X } from 'lucide-react';
+import { C, SplitBar, TimeChart } from '../components/charts/Charts';
 import { AIBox, Card, Kpi, Legend, TONE } from '../components/ui';
 import { tsbZone } from '../lib/analytics';
 import { hrZones, overtrainingRisk, runningCoachText } from '../lib/insights';
@@ -63,15 +63,9 @@ function PmcCard({ a }) {
           { key: 'load', label: 'Carico giornaliero', type: 'bar', axis: 'right', color: C.slate, opacity: 0.45 },
           { key: 'ctl', label: 'Fitness (CTL)', type: 'area', color: C.cyan, width: 2.5 },
           { key: 'atl', label: 'Fatica (ATL)', color: C.crimson },
-        ]} />
+        ]}
+        tooltipExtra={(row) => <div className="text-[10px] text-gray-500">Forma (TSB) {signed(row.tsb, 1)} · {tsbZone(row.tsb)?.label}</div>} />
       <FormScale tsb={p.tsb} />
-      <div className="mt-4 text-[10px] uppercase tracking-[0.16em] text-gray-500">Forma (TSB) giorno per giorno</div>
-      <TimeChart rows={a.pmc.rows} height={150} left={{ label: 'TSB' }}
-        zones={TSB_ZONES}
-        refLines={[{ y: 0, color: C.slate }]}
-        series={[{ key: 'tsb', label: 'Forma (TSB)', type: 'bar', color: C.emerald, format: (v) => signed(v, 1) }]}
-        barColor={(row) => ZONE_COLORS[tsbZone(row.tsb)?.key] ?? C.slate}
-        tooltipExtra={(row) => <div className="text-[10px] text-gray-500">{tsbZone(row.tsb)?.label}</div>} />
       <Legend items={TSB_ZONES.map((z) => ({ label: z.label, color: z.color }))} />
       <div className="mt-4 text-[10px] uppercase tracking-[0.16em] text-gray-500">ACWR (carico acuto / cronico)</div>
       <TimeChart rows={a.pmc.rows} height={120} left={{ min: 0, max: 2.2, format: (v) => fmt(v, 1) }}
@@ -79,38 +73,6 @@ function PmcCard({ a }) {
         refLines={[{ y: 1.3, color: C.amber }, { y: 1.5, color: C.crimson }]}
         series={[{ key: 'acwr', label: 'ACWR', color: C.amber, width: 2, format: (v) => fmt(v, 2) }]} />
       <Legend items={[{ label: 'CTL fitness', color: C.cyan }, { label: 'ATL fatica', color: C.crimson }, { label: 'Carico', color: C.slate }, { label: 'ACWR 0,8–1,3 sicuro', color: C.emerald }, { label: '> 1,5 rischio', color: C.crimson }]} />
-    </Card>
-  );
-}
-
-function EfficiencyCard({ a }) {
-  const e = a.efficiency;
-  const pts = e.points.map((p) => ({ ...p, color: p.long ? C.violet : p.hard ? C.crimson : C.cyan, r: p.long ? 6.5 : 5 }));
-  const dec = [...a.runs].reverse().filter((r) => isNum(r.decoupling)).map((r) => ({ date: r.date, decoupling: r.decoupling, name: r.name }));
-  return (
-    <Card title="Efficienza Aerobica & Cardiac Drift" subtitle="Efficiency Factor = velocità (m/min) / FC media · trend sulle corse facili" icon={Gauge} insightKey="ef" className="lg:col-span-2">
-      <div className="mb-4 grid grid-cols-3 gap-4">
-        <Kpi label="Trend EF (facili)" value={signed(e.trendPct, 1)} unit="%" tone={(e.trendPct ?? 0) >= 2 ? 'good' : (e.trendPct ?? 0) <= -2 ? 'bad' : undefined} />
-        <Kpi label="Decoupling medio" value={fmt(e.avgDecoupling, 1)} unit="%" tone={(e.avgDecoupling ?? 0) > 5 ? 'warn' : 'good'} sub="ultime 8 corse · < 5% = ok" />
-        <Kpi label="Corse > 5% drift" value={e.highDecoupling} />
-      </div>
-      <ScatterChart points={pts} height={230} yLabel="EF" xFormat={(t) => fmtDay(new Date(t).toISOString().slice(0, 10))} yFormat={(v) => fmt(v, 2)} trendFilter={(p) => !p.hard && !p.long}
-        tooltip={(p) => (
-          <>
-            <div className="mb-1 font-semibold text-gray-200">{p.name} · {fmtDay(p.date)}</div>
-            <div className="num text-gray-400">EF {fmt(p.y, 3)} · {fmtPace(p.pace)}/km · {fmt(p.hr)} bpm</div>
-          </>
-        )} />
-      <Legend items={[{ label: 'Facile', color: C.cyan }, { label: 'Qualità', color: C.crimson }, { label: 'Lungo', color: C.violet }, { label: 'Trend facili', color: C.cyan, dashed: true }]} />
-      {dec.length > 0 && (
-        <div className="mt-4">
-          <div className="mb-1 text-[10px] uppercase tracking-[0.16em] text-gray-500">Decoupling Pa:HR per corsa (%)</div>
-          <TimeChart rows={dec} height={110} left={{ min: 0 }} refLines={[{ y: 5, color: C.amber, label: '5%' }]}
-            series={[{ key: 'decoupling', label: 'Decoupling', type: 'bar', color: C.cyan, format: (v) => `${fmt(v, 1)}%` }]}
-            barColor={(row) => (row.decoupling > 5 ? C.amber : C.emerald)}
-            tooltipExtra={(row) => <div className="text-[10px] text-gray-500">{row.name}</div>} />
-        </div>
-      )}
     </Card>
   );
 }
@@ -371,13 +333,63 @@ function RunDetail({ a, run, onClose }) {
   );
 }
 
+/**
+ * Aerobic efficiency: one chart only. "HR at a fixed pace" and "pace at a fixed HR" are the same signal
+ * (one is a linear transform of the other), so only pace at the top of Z2 is shown.
+ */
+function EfficiencyCard({ a }) {
+  const e = a.efficiency;
+  const t = useMemo(() => hrPaceTrend(a), [a]);
+  const ch = t?.change;
+  const dec = [...a.runs].reverse().filter((r) => isNum(r.decoupling)).map((r) => ({ date: r.date, decoupling: r.decoupling, name: r.name }));
+  return (
+    <Card title="Efficienza aerobica · stai migliorando?" subtitle={t ? `Passo che tieni al limite della Z2 (${t.refHr} bpm), stimato da ogni km di ogni corsa · ${t.points} km in ${t.windowDays} giorni` : 'Quanto vai veloce a parità di battiti'} icon={Gauge} insightKey="ef" info="hrPace" className="lg:col-span-3">
+      <div className="mb-4 grid grid-cols-2 gap-4 sm:grid-cols-5">
+        <Kpi label={t ? `Passo a ${t.refHr} bpm · ora` : 'Passo a FC Z2'} value={fmtPace(t?.series.at(-1)?.paceAtHr)} unit="/km" big />
+        <Kpi label="vs 2 mesi fa" value={ch ? `${ch.pace > 0 ? '+' : ''}${ch.pace}` : '—'} unit="s/km" tone={ch ? (ch.pace <= -5 ? 'good' : ch.pace >= 5 ? 'bad' : undefined) : undefined}
+          sub={ch ? `≈ ${signed(ch.hr, 1)} bpm a ${fmtPace(t.refPace)}/km` : 'servono 3 mesi di corse'} />
+        <Kpi label="Trend EF facili" value={signed(e.trendPct, 1)} unit="%" tone={(e.trendPct ?? 0) >= 2 ? 'good' : (e.trendPct ?? 0) <= -2 ? 'bad' : undefined} sub={a.rangeLabel} />
+        <Kpi label="Deriva cardiaca media" value={fmt(e.avgDecoupling, 1)} unit="%" tone={(e.avgDecoupling ?? 0) > 5 ? 'warn' : 'good'} sub="ultime 8 corse · < 5% ok" />
+        <Kpi label="Corse > 5% deriva" value={e.highDecoupling} />
+      </div>
+      <div className="grid gap-5 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <div className="mb-1 text-[10px] uppercase tracking-[0.16em] text-gray-500">Passo a battiti costanti · più in alto = più veloce = meglio</div>
+          {t ? (
+            <TimeChart rows={t.series} height={220} left={paceAxis}
+              series={[
+                { key: 'paceAtHr', label: `Passo a ${t.refHr} bpm`, color: C.emerald, width: 2.5, dots: true, format: (v) => `${fmtPace(v)}/km` },
+                { key: 'paceAtHrTrend', label: 'Tendenza', color: '#F9FAFB', dash: '5 4', width: 1.5, format: (v) => `${fmtPace(v)}/km` },
+              ]}
+              tooltipExtra={(r) => <div className="mt-1 text-[10px] text-gray-500">mediana delle 4 settimane precedenti · {r.n} km</div>} />
+          ) : <p className="py-10 text-center text-sm text-gray-500">Servono almeno 8 km di corsa con FC e lap.</p>}
+          {dec.length > 0 && (
+            <div className="mt-4">
+              <div className="mb-1 text-[10px] uppercase tracking-[0.16em] text-gray-500">Deriva cardiaca (decoupling) per corsa · quanto sale la FC nella seconda metà</div>
+              <TimeChart rows={dec} height={110} left={{ min: 0 }} refLines={[{ y: 5, color: C.amber, label: '5%' }]}
+                series={[{ key: 'decoupling', label: 'Decoupling', type: 'bar', color: C.cyan, format: (v) => `${fmt(v, 1)}%` }]}
+                barColor={(row) => (row.decoupling > 5 ? C.amber : C.emerald)}
+                tooltipExtra={(row) => <div className="text-[10px] text-gray-500">{row.name}</div>} />
+            </div>
+          )}
+        </div>
+        <div>
+          <div className="mb-2 text-[10px] uppercase tracking-[0.16em] text-gray-500">Valutazione</div>
+          {t && <Notes notes={t.notes} />}
+          <p className="mt-3 text-[10px] leading-relaxed text-gray-600">Caldo, dislivello, disidratazione e malesseri alzano la FC: un singolo punto basso non è un passo indietro, conta la tendenza.</p>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 function RunsOverview({ a }) {
   const o = useMemo(() => runsOverview(a), [a]);
   const t = o.totals;
   const dl = o.deltas;
   const sub = (v, unit = '%') => (isNum(v) ? `${v > 0 ? '+' : ''}${v}${unit} vs periodo prec.` : 'nessun periodo prec.');
   return (
-    <Card title={`Analisi complessiva corse · ultimi ${a.rangeDays} giorni`} subtitle="Totali, andamento settimanale, tipi di uscita, record e tendenze" icon={BarChart3} info="runsOverview" className="lg:col-span-3">
+    <Card title={`Analisi complessiva corse · ${a.rangeLabel}`} subtitle="Totali, andamento settimanale, tipi di uscita, record e tendenze" icon={BarChart3} info="runsOverview" className="lg:col-span-3">
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-8">
         <Kpi label="Corse" value={t.count} sub={`${fmt(t.perWeek, 1)}/settimana`} />
         <Kpi label="Km totali" value={fmt(t.km, 1)} sub={sub(dl.km)} tone={isNum(dl.km) && dl.km > 30 ? 'warn' : undefined} />
@@ -451,67 +463,6 @@ function RunsOverview({ a }) {
   );
 }
 
-function HrPaceCard({ a }) {
-  const t = useMemo(() => hrPaceTrend(a), [a]);
-  if (!t) {
-    return (
-      <Card title="Cuore vs ritmo" subtitle="Stai migliorando? Battiti a parità di ritmo nel tempo" icon={HeartPulse} info="hrPace" className="lg:col-span-3">
-        <p className="py-6 text-center text-sm text-gray-500">Servono almeno 8 km di corsa con FC e lap per costruire il grafico.</p>
-      </Card>
-    );
-  }
-  const ch = t.change;
-  const [es, ee] = (t.scatter.earlySpan ?? '|').split('|');
-  const [ls, le] = (t.scatter.lateSpan ?? '|').split('|');
-  const scatter = [
-    ...t.scatter.early.map((p) => ({ x: p.pace, y: p.hr, color: C.slate, r: 3.5, period: 'early', date: p.date })),
-    ...t.scatter.late.map((p) => ({ x: p.pace, y: p.hr, color: C.cyan, r: 3.5, period: 'late', date: p.date })),
-  ];
-  return (
-    <Card title="Cuore vs ritmo · stai migliorando?" subtitle={`Ogni km di ogni corsa normalizzato a ritmo e FC di riferimento · ${t.points} km analizzati negli ultimi 6 mesi`} icon={HeartPulse} info="hrPace" className="lg:col-span-3">
-      <div className="mb-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <Kpi label={`FC a ${fmtPace(t.refPace)}/km · ora`} value={fmt(t.series.at(-1)?.hrAtPace, 0)} unit="bpm" big />
-        <Kpi label="vs 2 mesi fa" value={ch ? signed(ch.hr, 1) : '—'} unit="bpm" tone={ch ? (ch.hr <= -2 ? 'good' : ch.hr >= 2 ? 'bad' : undefined) : undefined} sub="meno = cuore più efficiente" />
-        <Kpi label={`Passo a ${t.refHr} bpm · ora`} value={fmtPace(t.series.at(-1)?.paceAtHr)} unit="/km" big />
-        <Kpi label="vs 2 mesi fa" value={ch ? `${ch.pace > 0 ? '+' : ''}${ch.pace}` : '—'} unit="s/km" tone={ch ? (ch.pace <= -5 ? 'good' : ch.pace >= 5 ? 'bad' : undefined) : undefined} sub="negativo = più veloce" />
-      </div>
-      <div className="grid gap-5 lg:grid-cols-2">
-        <div>
-          <div className="mb-1 text-[10px] uppercase tracking-[0.16em] text-gray-500">Battiti a ritmo costante ({fmtPace(t.refPace)}/km) · più in basso = meglio</div>
-          <TimeChart rows={t.series} height={190} left={{ label: 'bpm' }}
-            series={[
-              { key: 'hrAtPace', label: `FC a ${fmtPace(t.refPace)}/km`, color: C.crimson, width: 2.5, dots: true, format: (v) => `${fmt(v, 1)} bpm` },
-              { key: 'hrAtPaceTrend', label: 'Tendenza', color: '#F9FAFB', dash: '5 4', width: 1.5, format: (v) => `${fmt(v, 1)} bpm` },
-            ]}
-            tooltipExtra={(r) => <div className="mt-1 text-[10px] text-gray-500">media mobile 4 settimane · {r.n} km</div>} />
-        </div>
-        <div>
-          <div className="mb-1 text-[10px] uppercase tracking-[0.16em] text-gray-500">Ritmo a battiti costanti ({t.refHr} bpm, limite Z2) · più in alto = meglio</div>
-          <TimeChart rows={t.series} height={190} left={paceAxis}
-            series={[
-              { key: 'paceAtHr', label: `Passo a ${t.refHr} bpm`, color: C.emerald, width: 2.5, dots: true, format: (v) => `${fmtPace(v)}/km` },
-              { key: 'paceAtHrTrend', label: 'Tendenza', color: '#F9FAFB', dash: '5 4', width: 1.5, format: (v) => `${fmtPace(v)}/km` },
-            ]} />
-        </div>
-      </div>
-      <div className="mt-5 grid gap-5 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <div className="mb-1 text-[10px] uppercase tracking-[0.16em] text-gray-500">Curva FC-ritmo: ogni punto è un km · se la nuvola recente scende o va a sinistra, migliori</div>
-          <ScatterChart points={scatter} height={240} yLabel="FC" xFormat={(v) => fmtPace(v)} yFormat={(v) => fmt(v)}
-            trends={[{ filter: (p) => p.period === 'early', color: C.slate }, { filter: (p) => p.period === 'late', color: C.cyan }]}
-            tooltip={(p) => <div className="num text-gray-300">{fmtDay(p.date)} · {fmtPace(p.x)}/km · {fmt(p.y)} bpm</div>} />
-          <Legend items={[{ label: `Periodo iniziale ${es ? `(${fmtDay(es)}–${fmtDay(ee)})` : ''}`, color: C.slate }, { label: `Periodo recente ${ls ? `(${fmtDay(ls)}–${fmtDay(le)})` : ''}`, color: C.cyan }, { label: 'Linee = relazione media FC/ritmo del periodo', color: '#F9FAFB' }]} />
-        </div>
-        <div>
-          <div className="mb-2 text-[10px] uppercase tracking-[0.16em] text-gray-500">Valutazione</div>
-          <Notes notes={t.notes} />
-          <p className="mt-3 text-[10px] leading-relaxed text-gray-600">Caldo, dislivello, disidratazione e malesseri alzano la FC: un singolo punto alto non è un passo indietro, conta la tendenza.</p>
-        </div>
-      </div>
-    </Card>
-  );
-}
-
 export function RunningTab({ a }) {
   const [selected, setSelected] = useState(null);
   const run = selected && a.runs.find((r) => r.id === selected.id);
@@ -520,7 +471,6 @@ export function RunningTab({ a }) {
     <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
       <PmcCard a={a} />
       <AIBox title={run ? `AI Running Coach · ${run.name}` : 'AI Running Coach'} task="runningCoach" heuristic={coach} extra={run ? { run } : undefined} />
-      <HrPaceCard a={a} />
       <EfficiencyCard a={a} />
       <ZonesCard a={a} />
       <RaceCard a={a} />

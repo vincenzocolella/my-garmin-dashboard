@@ -150,7 +150,6 @@ export function detectIllness(rows, activities, { sensitivity = 'media', today }
   const last = series.at(-1);
   const activeEpisode = episodes.find((e) => e.ongoing);
   const recent = series.slice(-3).filter((d) => d.flagged).length;
-  const illnessEps = episodes.filter((e) => e.type === 'illness');
   return {
     series,
     episodes,
@@ -163,13 +162,7 @@ export function detectIllness(rows, activities, { sensitivity = 'media', today }
       flaggedLast3: recent,
     },
     stats: {
-      count: episodes.length,
-      illness: illnessEps.length,
-      avgDays: round(mean(episodes.map((e) => e.days)), 1),
-      avgRecovery: round(mean(episodes.map((e) => e.recoveryDays)), 1),
-      trainedHard: episodes.filter((e) => e.hardDuring.length).length,
-      afterHighLoad: episodes.filter((e) => (e.loadRatio ?? 0) >= 1.3).length,
-      afterShortSleep: episodes.filter((e) => (e.sleepBefore ?? 0) <= -0.5).length,
+      ...episodeStats(episodes),
       daysScanned: series.filter((d) => d.index != null).length,
       healthyStreak: (() => {
         let n = 0;
@@ -179,5 +172,18 @@ export function detectIllness(rows, activities, { sensitivity = 'media', today }
       firstDate: series.find((d) => d.index != null)?.date ?? null,
       lastEpisodeAgo: episodes[0] ? diffDays(today ?? series.at(-1).date, episodes[0].end) : null,
     },
+  };
+}
+
+/** Aggregate figures over a list of episodes (the whole history, or the selected range). */
+export function episodeStats(episodes) {
+  return {
+    count: episodes.length,
+    illness: episodes.filter((e) => e.type === 'illness').length,
+    avgDays: round(mean(episodes.map((e) => e.days)), 1),
+    avgRecovery: round(mean(episodes.map((e) => e.recoveryDays)), 1),
+    trainedHard: episodes.filter((e) => e.hardDuring.length).length,
+    afterHighLoad: episodes.filter((e) => (e.loadRatio ?? 0) >= 1.3).length,
+    afterShortSleep: episodes.filter((e) => (e.sleepBefore ?? 0) <= -0.5).length,
   };
 }

@@ -7,7 +7,8 @@ export const TABS = [
   { key: 'running', label: 'Corsa', icon: Footprints },
   { key: 'strength', label: 'Forza', icon: Dumbbell },
 ];
-export const RANGES = [7, 14, 30, 90];
+export const RANGES = [7, 30, 90, 'max'];
+const rangeLabel = (r) => (r === 'max' ? 'Max' : `${r}g`);
 
 function StatusPill({ status, dataset, dataSource }) {
   const time = status.at ? status.at.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }) : '';
@@ -63,9 +64,9 @@ export function Header({ tab, setTab, range, setRange, status, dataset, dataSour
 
         <div className="flex gap-1 rounded-lg border border-edge bg-panel/60 p-1">
           {RANGES.map((r) => (
-            <button key={r} type="button" onClick={() => setRange(r)}
+            <button key={r} type="button" onClick={() => setRange(r)} title={r === 'max' ? 'Tutto lo storico disponibile (fino a 12 mesi, scaricato in background)' : `Ultimi ${r} giorni`}
               className={`num rounded-md px-2.5 py-1 text-xs transition ${range === r ? 'bg-gray-700 text-white' : 'text-gray-500 hover:text-gray-200'}`}>
-              {r}D
+              {rangeLabel(r)}
             </button>
           ))}
         </div>

@@ -167,6 +167,12 @@ export function SettingsModal({ settings, onSave, onClose, onImport, onClearCach
               <Field label="FC max" hint="vuoto = dalle zone"><input className={input} type="number" value={draft.maxHr} onChange={set('maxHr')} placeholder="auto" /></Field>
               <Field label="FC riposo" hint="vuoto = dalle zone"><input className={input} type="number" value={draft.restHr} onChange={set('restHr')} placeholder="auto" /></Field>
               <Field label="Bisogno sonno (h)"><input className={input} type="number" step="0.25" value={draft.sleepNeedH} onChange={set('sleepNeedH')} /></Field>
+              <Field label="Età" hint="vuoto = da Garmin Connect · per il Longevity index"><input className={input} type="number" min="14" max="99" value={draft.age} onChange={set('age')} placeholder="auto" /></Field>
+              <Field label="Sesso" hint="norme di VO2max e HRV">
+                <select className={input} value={draft.sex} onChange={set('sex')}>
+                  <option value="">Auto (Garmin)</option><option value="M">Uomo</option><option value="F">Donna</option>
+                </select>
+              </Field>
             </div>
             <Field label="Zone FC" hint="Auto = lette da Garmin Connect a ogni sincronizzazione; FC max/riposo qui sopra, se compilate, hanno la precedenza nei calcoli">
               <select className={input} value={draft.zoneSource} onChange={set('zoneSource')}>

@@ -1,6 +1,7 @@
 // Heuristic engine: deterministic diagnostics computed from the analytics object.
 // Used when no AI provider is configured, and as instant "first draft" before an AI call.
 import { PLAN_START, RACE_DATE } from './planData';
+import { summaryText } from './summary';
 import { clamp, diffDays, fmt, fmtDuration, fmtH, fmtPace, isNum, mean, round, signed } from './util';
 
 export const PERSONAS = {
@@ -57,7 +58,7 @@ export function findings(a) {
     if (r.hrvZ <= -1)
       add({
         id: 'hrv', area: 'recovery', sev: r.hrvZ <= -1.8 || a.hrvTrend.consecutiveBelow >= 3 ? 3 : 2,
-        fact: `HRV ${L.hrv} ms, ${signed(pct)}% vs baseline 30gg (${fmt(r.hrvBase.mean, 1)} ± ${fmt(r.hrvBase.sd, 1)} ms, z = ${fmt(r.hrvZ, 2)})${a.hrvTrend.consecutiveBelow >= 3 ? ', sotto baseline da 3 giorni consecutivi' : ''}`,
+        fact: `HRV ${L.hrv} ms, ${signed(pct)}% vs baseline 60gg (${fmt(r.hrvBase.mean, 1)} ± ${fmt(r.hrvBase.sd, 1)} ms, z = ${fmt(r.hrvZ, 2)})${a.hrvTrend.consecutiveBelow >= 3 ? ', sotto baseline da 3 giorni consecutivi' : ''}`,
         advice: 'niente intensità oggi: Z2 ≤ 45’ o riposo attivo',
         jab: 'Il tuo sistema nervoso sta chiedendo pietà e tu gli rispondi con le ripetute.',
         longTerm: 'un HRV cronicamente soppresso erode la capacità di adattamento',
@@ -125,67 +126,101 @@ export function findings(a) {
 }
 
 // --------------------------------------------------------------------- micro-insights per card
+// One interpretive sentence per card: what the numbers mean, never a re-listing of the KPIs shown below it.
+/** Lower-case the first letter unless it starts an acronym (VO2max, HRV, FC). */
+const lc = (s) => (s && !/^[A-Z]{2}/.test(s) ? s[0].toLowerCase() + s.slice(1) : s);
+const COMP_LABEL = { autonomic: 'il sistema nervoso', sleep: 'il sonno', stress: 'lo stress di ieri', load: 'il carico di allenamento' };
+const COMP_FIX = {
+  autonomic: 'serve una giornata tranquilla e una notte senza alcol per farlo risalire',
+  sleep: 'una notte più lunga lo riporta su rapidamente',
+  stress: 'una serata di vero stacco aiuta più di qualsiasi integratore',
+  load: 'un giorno facile o di riposo riequilibra',
+};
 export function cardInsights(a) {
   const r = a.readiness;
-  const L = a.latest;
   const p = a.pmc.latest;
   const intr = a.ans.intraday;
-  const weakest = Object.entries({ HRV: r.autonomic, Sonno: r.sleep, Stress: r.stress, 'Body Battery': r.bb })
-    .filter(([, v]) => isNum(v))
-    .sort((x, y) => x[1] - y[1])[0];
   const out = {};
-  out.readiness = {
-    text: `Readiness ${fmt(r.score)} (${signed(r.delta)} vs media 30gg).${weakest ? ` Anello più debole: ${weakest[0]} (${weakest[1]}).` : ''}`,
-    tone: (r.score ?? 80) >= 80 ? 'good' : (r.score ?? 80) >= 65 ? 'warn' : 'bad',
+
+  const comps = [['autonomic', r.autonomic], ['sleep', r.sleep], ['stress', r.stress], ['load', r.load]].filter(([, v]) => isNum(v)).sort((x, y) => x[1] - y[1]);
+  const weak = comps[0];
+  out.readiness = !isNum(r.score)
+    ? { text: 'Dati di stanotte non ancora sincronizzati.', tone: 'info' }
+    : weak && weak[1] < 65
+      ? { text: `${r.band.label}: a pesare è soprattutto ${COMP_LABEL[weak[0]]}; ${COMP_FIX[weak[0]]}.`, tone: r.score >= 65 ? 'warn' : 'bad' }
+      : { text: `${r.band.label}: nessun componente sotto la tua norma${r.score >= 85 ? ', è un buon giorno per uno sforzo impegnativo' : ''}.`, tone: 'good' };
+
+  const L = a.longevity;
+  const strong = [...L.parts].filter((x) => isNum(x.score)).sort((x, y) => y.score * y.weight - x.score * x.weight)[0];
+  out.longevity = {
+    text: L.levers.length ? `Punto di forza: ${lc(strong?.label)}. La leva che sposta di più l’indice è ${lc(L.levers[0].label)} (pesa ${L.levers[0].weight}%).` : `Le abitudini su cui puoi agire sono tutte in fascia di rischio basso${strong ? `, con ${lc(strong.label)} come punto di forza` : ''}: mantienile.`,
+    tone: (L.score ?? 0) >= 70 ? 'good' : (L.score ?? 0) >= 50 ? 'warn' : 'bad',
   };
+
+  const per = a.hrvTrend.period;
   out.hrvRhr =
     a.hrvTrend.consecutiveBelow >= 3
-      ? { text: `HRV sotto baseline da 3 giorni consecutivi (${signed(a.hrvTrend.pct3d, 0)}%)${(r.rhrDelta ?? 0) > 2 ? ` con FC riposo +${fmt(r.rhrDelta, 1)} bpm: probabile stress sistemico` : (a.pmc.load7 ?? 0) > (a.pmc.load28avg7 ?? 0) * 1.15 || (a.pmc.acwrPeak14?.value ?? 0) > 1.4 ? ' dopo un blocco di carico elevato: risposta al sovraccarico' : ' nonostante volume stabile: possibile stress extra-sportivo'}.`, tone: 'bad' }
-      : { text: `HRV ${fmt(L.hrv)} ms (z ${fmt(r.hrvZ, 2)}), FC riposo ${fmt(L.rhr)} bpm (${signed(r.rhrDelta, 1)} vs baseline).`, tone: (r.hrvZ ?? 0) <= -1 ? 'warn' : 'good' };
-  out.sleep = {
-    text: `Debito 7gg ${fmtH(a.sleep.debt7)} · media ${fmtH(a.sleep.avg7)} · efficienza ${fmt(a.sleep.efficiency7, 1)}% · deep ${fmt(a.sleep.deepPct7, 0)}%.`,
-    tone: (a.sleep.debt7 ?? 0) >= 6 ? 'bad' : (a.sleep.debt7 ?? 0) >= 3 ? 'warn' : 'good',
-  };
+      ? { text: `HRV sotto la tua media da 3 giorni${(r.rhrDelta ?? 0) > 2 ? ' con FC a riposo in salita: probabile stress sistemico o malessere in arrivo' : (a.pmc.load7 ?? 0) > (a.pmc.load28avg7 ?? 0) * 1.15 || (a.pmc.acwrPeak14?.value ?? 0) > 1.4 ? ' dopo un blocco di carico elevato: è la risposta al sovraccarico' : ' senza un aumento di allenamento: probabile stress extra-sportivo'}.`, tone: 'bad' }
+      : (r.hrv7Z ?? 0) <= -1
+        ? { text: 'La media dei 7 giorni è uscita sotto la tua zona normale: il recupero sta faticando, anche se la singola notte può sembrare ok.', tone: 'warn' }
+        : (r.hrv7Z ?? 0) >= 1
+          ? { text: 'Media dei 7 giorni sopra la zona normale: il sistema nervoso sta assorbendo bene allenamento e stress.', tone: 'good' }
+          : { text: `Sistema nervoso stabile, dentro la tua zona normale${isNum(per.hrvChangePct) && Math.abs(per.hrvChangePct) >= 8 ? `; nel periodo l’HRV è ${per.hrvChangePct > 0 ? 'in crescita' : 'in calo'}` : ''}.`, tone: 'good' };
+
+  const s = a.sleep;
+  const sleepIssues = [
+    (s.debt7 ?? 0) >= 3 && [s.debt7 / 3, `il debito della settimana (${fmtH(s.debt7)}) è il primo freno al recupero`],
+    (s.bedtimeSdMin ?? 0) > 45 && [s.bedtimeSdMin / 45, `più della durata pesa l’irregolarità: l’orario di letto varia di ± ${s.bedtimeSdMin} min`],
+    (s.period.deepPct ?? 20) < 13 && [1, 'poco sonno profondo: sedute intense serali, alcol e cene tardive sono i sospettati principali'],
+    (s.period.efficiency ?? 100) < 87 && [0.9, 'molti risvegli: il tempo a letto non si traduce tutto in sonno'],
+  ].filter(Boolean).sort((x, y) => y[0] - x[0]);
+  out.sleep = sleepIssues.length
+    ? { text: `${sleepIssues[0][1][0].toUpperCase()}${sleepIssues[0][1].slice(1)}.`, tone: (s.debt7 ?? 0) >= 6 ? 'bad' : 'warn' }
+    : { text: 'Durata, regolarità e fasi nella norma: il sonno sta lavorando per te.', tone: 'good' };
+
   out.ans = intr
     ? (() => {
         const bad = intr.windows.filter((w) => w.tone !== 'good');
         return bad.length
           ? { text: `${bad.map((w) => `${w.label} ${intr.rows[w.from].label}-${intr.rows[w.to].label}`).join(' · ')}.`, tone: bad.some((w) => w.tone === 'bad') ? 'bad' : 'warn' }
-          : { text: `Notte efficace (stress ${fmt(intr.nightStress)}, BB +${fmt(intr.bbGain)}), nessun picco anomalo oggi.`, tone: 'good' };
+          : { text: 'Notte che ha ricaricato e nessun picco di stress anomalo finora.', tone: 'good' };
       })()
     : { text: 'Nessun dato intraday disponibile per oggi.', tone: 'info' };
+
   out.pmc = p
-    ? { text: `CTL ${fmt(p.ctl, 1)} · ATL ${fmt(p.atl, 1)} · TSB ${fmt(p.tsb, 1)} → ${a.pmc.zone?.label}. ACWR ${fmt(p.acwr, 2)}${(p.acwr ?? 1) > 1.3 ? ' (oltre lo sweet spot)' : ''}.`, tone: (p.acwr ?? 1) > 1.5 || p.tsb < -30 ? 'bad' : (p.acwr ?? 1) > 1.3 ? 'warn' : 'good' }
+    ? (p.acwr ?? 1) > 1.5 || p.tsb < -30
+      ? { text: 'Il carico è salito più in fretta di quanto il fisico riesca ad assorbire: è la zona in cui arrivano infortuni e malanni.', tone: 'bad' }
+      : (p.acwr ?? 1) > 1.3 || (a.pmc.rampRate ?? 0) > 7
+        ? { text: 'Stai aumentando un po’ troppo in fretta: consolida questo volume prima di aggiungere.', tone: 'warn' }
+        : p.tsb > 20
+          ? { text: 'Molto fresco ma la forma di fondo sta calando: va bene solo se è uno scarico voluto.', tone: 'info' }
+          : { text: `Progressione sostenibile: ${a.pmc.zone?.key === 'optimal' ? 'stai costruendo forma senza esagerare' : 'carico in equilibrio con il recupero'}.`, tone: 'good' }
     : { text: 'Carico insufficiente per il PMC.', tone: 'info' };
   out.ef = {
     text: isNum(a.efficiency.trendPct)
-      ? `EF easy run ${signed(a.efficiency.trendPct, 1)}% nel periodo${isNum(a.efficiency.avgDecoupling) ? `, decoupling medio ${fmt(a.efficiency.avgDecoupling, 1)}%` : ''}${a.efficiency.trendPct >= 2 ? ': adattamento aerobico reale.' : a.efficiency.trendPct <= -2 ? ': segnale di fatica.' : ': stabile.'}`
+      ? a.efficiency.trendPct >= 2 ? 'Vai più veloce a parità di battiti: la base aerobica sta migliorando davvero.' : a.efficiency.trendPct <= -2 ? 'A parità di battiti vai più piano: fatica accumulata, caldo o un periodo di malessere.' : 'Efficienza stabile: per migliorarla serve più volume facile, non più intensità.'
       : 'Servono almeno 3 corse facili per il trend.',
     tone: (a.efficiency.trendPct ?? 0) <= -2 ? 'warn' : 'good',
   };
   out.zones = a.zones.pct
-    ? { text: `${a.zones.pct.low}/${a.zones.pct.mid}/${a.zones.pct.high} (Z1-2/Z3/Z4-5). ${a.zones.pct.mid >= 25 ? 'Troppa zona grigia: non è 80/20.' : a.zones.pct.low >= 75 ? 'Polarizzazione corretta.' : 'Vicino all’80/20, rallenta i facili.'}${a.zones.easyTooHard ? ` ${a.zones.easyTooHard} easy run troppo veloci.` : ''}`, tone: a.zones.pct.mid >= 25 ? 'warn' : 'good' }
+    ? { text: `${a.zones.pct.mid >= 25 ? 'Troppo tempo nella zona grigia: le facili non sono abbastanza facili e le dure non abbastanza dure.' : a.zones.pct.low >= 75 ? 'Distribuzione polarizzata corretta.' : 'Vicino all’80/20: rallenta un po’ le uscite facili.'}${a.zones.easyTooHard ? ` ${a.zones.easyTooHard} easy run troppo veloci.` : ''}`, tone: a.zones.pct.mid >= 25 ? 'warn' : 'good' }
     : { text: 'Nessuna corsa con dati di frequenza cardiaca.', tone: 'info' };
   const half = a.race.predictions.find((x) => x.key === 'half');
   out.race = {
-    text: `Mezza stimata ${fmtDuration(half?.model)} (${fmtPace(half?.pace)}/km) da ${a.race.vdotSource}${isNum(a.race.vo2max) ? ` ${fmt(a.race.vo2max, 1)}` : ''}; volume ${fmt(a.race.weeklyKm, 1)} km/sett${a.race.weeklyKm < 35 ? ': sotto i 35 km la mezza paga dazio.' : '.'}`,
+    text: `Potenziale sulla mezza ${fmtDuration(half?.model)}${a.race.weeklyKm < 35 ? ': sotto i 35 km a settimana la tenuta degli ultimi km è il vero limite.' : ': il volume attuale lo sostiene.'}`,
     tone: a.race.weeklyKm < 25 ? 'warn' : 'info',
   };
   const recentConf = a.strength.conflicts.filter((c) => diffDays(a.today, c.date) <= 14);
   out.hybrid = recentConf.length
-    ? { text: `${recentConf.length} conflitti recupero (leg day ↔ qualità) negli ultimi 14 giorni. Quota neuromuscolare ${fmt(a.strength.nmShare)}% del carico.`, tone: 'warn' }
-    : { text: `Nessun conflitto di interferenza. Quota neuromuscolare ${fmt(a.strength.nmShare)}% del carico totale.`, tone: 'good' };
+    ? { text: `${recentConf.length} volte negli ultimi 14 giorni le gambe pesanti sono arrivate a ridosso di una corsa importante: è la causa più comune di sedute fallite.`, tone: 'warn' }
+    : { text: 'Pesi e corsa ben separati: nessuna interferenza di recupero.', tone: 'good' };
   out.volume = {
-    text: `${a.totals.strength} sedute (${fmt(a.strength.perWeek, 1)}/sett) · tonnellaggio ${fmt(a.strength.tonnage)} kg · RPE medio ${fmt(a.strength.avgRpe, 1)}.`,
-    tone: a.strength.perWeek < 1 ? 'warn' : 'good',
-  };
-  out.longevity = {
-    text: `Indice ${fmt(a.longevity.score)} da FC riposo ${fmt(a.longevity.averages.rhr, 1)}, HRV ${fmt(a.longevity.averages.hrv, 1)}, sonno ${fmtH(a.longevity.averages.sleepH)}, VO2max ${fmt(a.longevity.averages.vo2max, 1)}.`,
-    tone: 'info',
+    text: a.strength.perWeek < 1 ? 'Meno di una seduta a settimana: due brevi sedute bastano per proteggere tendini e articolazioni.' : (a.strength.avgRpe ?? 0) >= 8.5 ? 'Sedute molto dure in media: tienine conto prima dei lunghi.' : 'Frequenza e intensità della forza adeguate.',
+    tone: a.strength.perWeek < 1 || (a.strength.avgRpe ?? 0) >= 8.5 ? 'warn' : 'good',
   };
   out.runs = {
-    text: `${a.totals.runs} corse · ${fmt(a.totals.km, 1)} km nel periodo.${a.zones.easyTooHard ? ` ${a.zones.easyTooHard} facili con troppo tempo in Z3+.` : ''}`,
-    tone: a.zones.easyTooHard ? 'warn' : 'info',
+    text: a.zones.easyTooHard ? `${a.zones.easyTooHard} uscite facili con troppo tempo sopra la Z2 (⚠): rallentale.` : 'Le uscite facili rispettano l’intensità prevista.',
+    tone: a.zones.easyTooHard ? 'warn' : 'good',
   };
   return { ...out, ...extraCardInsights(a) };
 }
@@ -248,23 +283,6 @@ export function judgeText(a, persona) {
   const n = nextSession(a);
   const footer = persona === 'sergeant' ? `ORDINE DEL GIORNO: ${n.title}. Motivo: ${n.why}. Esegui.` : persona === 'quant' ? `Sessione consigliata: ${n.title} [${n.why}]. Rischio overtraining stimato: ${overtrainingRisk(a)}/100.` : `Prossimo passo: ${n.title} (${n.why}). Proteggi il sonno: è il moltiplicatore di tutto il resto.`;
   return render(f.slice(0, 7), persona, openers[persona](a, worst), footer);
-}
-
-export function bioAuditText(a, persona) {
-  const f = findings(a).filter((x) => ['recovery', 'sleep', 'stress'].includes(x.area));
-  const r = a.readiness;
-  const diag = [];
-  if ((r.hrvZ ?? 0) <= -1 && (r.rhrDelta ?? 0) >= 3) diag.push('Pattern compatibile con infiammazione latente / inizio di malattia (HRV ↓ + FC riposo ↑).');
-  if ((r.hrvZ ?? 0) <= -1 && (a.latest.stress ?? 0) >= 35 && (a.pmc.latest?.tsb ?? 0) < -15) diag.push('Sovraccarico del sistema nervoso: allenamento e stress quotidiano si sommano.');
-  if ((a.sleep.debt7 ?? 0) >= 3 || (a.sleep.efficiency7 ?? 100) < 87 || a.ans.intraday?.windows.some((w) => w.label.startsWith('Stress serale'))) diag.push('Igiene del sonno migliorabile (debito, efficienza o attivazione serale).');
-  if (!diag.length) diag.push('Nessun pattern patologico: sistema autonomico in equilibrio.');
-  const presc = [
-    (r.hrvZ ?? 0) <= -1 ? 'Allenamento: solo Z1-Z2 o riposo, niente sedute neuromuscolari pesanti.' : 'Allenamento: via libera secondo il piano.',
-    (a.sleep.debt7 ?? 0) >= 3 ? `Stasera a letto entro le 22:45 (+45’), obiettivo ${fmtH(a.sleep.need)}.` : 'Mantieni l’orario di sonno attuale (±30’).',
-    'Luce naturale 10’ entro un’ora dal risveglio; caffeina non oltre le 14:00.',
-    a.ans.intraday?.windows.some((w) => w.label.includes('post-prandiale')) ? 'Dopo pranzo: 10’ di camminata, riduci carboidrati raffinati.' : 'Idratazione: 35 ml/kg + elettroliti nei giorni di corsa.',
-  ];
-  return render(f, persona, `${openers[persona](a, Math.max(0, ...f.map((x) => x.sev)))}\n\nDIAGNOSI\n${diag.map((d) => `• ${d}`).join('\n')}\n\nEVIDENZE`, `PRESCRIZIONI PER OGGI\n${presc.map((p) => `• ${p}`).join('\n')}`);
 }
 
 export function sessionCritique(a, run) {
@@ -336,7 +354,7 @@ export function chatAnswer(a, question) {
   if (/pesi|forza|palestra|squat|leg|gamb/.test(q)) return hybridText(a, 'quant');
   if (/gara|tempo|previs|mezza|maratona|10k|5k/.test(q))
     return a.race.predictions.map((p) => `${p.label}: ${fmtDuration(p.model)} (${fmtPace(p.pace)}/km)${p.garmin ? ` · Garmin ${fmtDuration(p.garmin)}` : ''}`).join('\n') + `\nBasato su ${a.race.vdotSource}${isNum(a.race.vo2max) ? ` ${fmt(a.race.vo2max, 1)}` : ''} e ${fmt(a.race.weeklyKm, 1)} km/sett.`;
-  if (/hrv|stress|recuper|stanc|riposo|battery/.test(q)) return bioAuditText(a, 'quant');
+  if (/hrv|stress|recuper|stanc|riposo|battery|come sto|stato/.test(q)) return summaryText(a);
   return `${judgeText(a, 'quant')}\n\n(motore euristico: per domande libere configura Gemini/OpenAI nelle impostazioni)`;
 }
 
@@ -376,7 +394,8 @@ export function sleepCoachText(a, persona) {
 // --------------------------------------------------------------------- wellness / illness
 export function illnessText(a, persona) {
   const il = a.illness;
-  const st = il.stats;
+  const st = { ...il.stats, ...il.view.stats };
+  const episodes = il.view.episodes;
   const lines = [openers[persona](a, il.current.active ? 3 : st.count ? 1 : 0), ''];
   lines.push('STATO ATTUALE');
   if (il.current.active) {
@@ -384,13 +403,13 @@ export function illnessText(a, persona) {
     lines.push(`• Segnali attivi${e ? ` da ${e.days} giorni (${e.label.toLowerCase()}, confidenza ${e.confidence}%)` : ' negli ultimi giorni'}: ${(il.current.today?.signals ?? []).join(', ') || 'deviazioni autonomiche'}.`);
     lines.push(persona === 'sergeant' ? '• Oggi l’unico allenamento autorizzato è dormire. Se ti vedo con le ripetute ti radio io.' : '• Niente intensità finché FC a riposo e HRV non tornano in baseline per 2 giorni consecutivi.');
   } else lines.push(`• Nessun segnale attivo: ${st.healthyStreak} giorni consecutivi nella norma.`);
-  lines.push('', `STORICO (${st.daysScanned} giorni analizzati)`);
-  if (!il.episodes.length) lines.push('• Nessun episodio rilevato con la sensibilità attuale.');
+  lines.push('', `STORICO (ultimi ${il.view.days} giorni)`);
+  if (!episodes.length) lines.push('• Nessun episodio rilevato con la sensibilità attuale.');
   else {
     const byType = {};
-    il.episodes.forEach((e) => (byType[e.label] = (byType[e.label] ?? 0) + 1));
+    episodes.forEach((e) => (byType[e.label] = (byType[e.label] ?? 0) + 1));
     lines.push(`• ${st.count} episodi: ${Object.entries(byType).map(([k, v]) => `${v} × ${k.toLowerCase()}`).join(', ')}. Durata media ${fmt(st.avgDays, 1)} giorni, rientro in baseline in ${fmt(st.avgRecovery, 1)} giorni.`);
-    il.episodes.slice(0, 3).forEach((e) => lines.push(`• ${e.start.slice(8)}/${e.start.slice(5, 7)}–${e.end.slice(8)}/${e.end.slice(5, 7)}: ${e.label.toLowerCase()} · FC riposo ${signed(e.markers.rhr, 1)} bpm, HRV ${signed(e.markers.hrv)}%${e.hardDuring.length ? ` · ${e.hardDuring.length} ${e.hardDuring.length === 1 ? 'seduta dura' : 'sedute dure'} durante l’episodio` : ''}.`));
+    episodes.slice(0, 3).forEach((e) => lines.push(`• ${e.start.slice(8)}/${e.start.slice(5, 7)}–${e.end.slice(8)}/${e.end.slice(5, 7)}: ${e.label.toLowerCase()} · FC riposo ${signed(e.markers.rhr, 1)} bpm, HRV ${signed(e.markers.hrv)}%${e.hardDuring.length ? ` · ${e.hardDuring.length} ${e.hardDuring.length === 1 ? 'seduta dura' : 'sedute dure'} durante l’episodio` : ''}.`));
   }
   lines.push('', 'PATTERN');
   if (st.afterHighLoad) lines.push(`• ${st.afterHighLoad}/${st.count} episodi preceduti da un carico settimanale ≥ 1,3× il normale: il tuo punto di rottura è il picco di volume, non il volume in sé.`);
@@ -453,7 +472,7 @@ export function extraCardInsights(a) {
       : (il.current.today?.index ?? 0) >= 50
         ? { text: `Da monitorare: ${(il.current.today?.signals ?? []).join(', ')}, ma senza il quadro tipico di malessere (FC riposo ↑ con HRV ↓).`, tone: 'warn' }
         : { text: `Nessun segnale attivo · ${il.stats.healthyStreak} giorni consecutivi nella norma.`, tone: 'good' },
-    illnessTimeline: { text: `${il.stats.count} episodi in ${il.stats.daysScanned} giorni analizzati${il.stats.illness ? `, di cui ${il.stats.illness} compatibili con malattia` : ''}.`, tone: il.stats.illness ? 'warn' : 'info' },
-    illnessPatterns: { text: il.stats.count ? `Trigger: ${il.stats.afterHighLoad} dopo picchi di carico, ${il.stats.afterShortSleep} dopo notti corte; rientro medio ${fmt(il.stats.avgRecovery, 1)} giorni.` : 'Nessun episodio: nessun pattern da analizzare.', tone: 'info' },
+    illnessTimeline: { text: il.view.stats.count ? `${il.view.stats.count} ${il.view.stats.count === 1 ? 'episodio' : 'episodi'} negli ultimi ${il.view.days} giorni${il.view.stats.illness ? `, di cui ${il.view.stats.illness} compatibili con malattia` : ''}: picchi isolati di un giorno sono spesso alcol o una notte storta.` : `Nessun episodio negli ultimi ${il.view.days} giorni: il fisico ha retto bene.`, tone: il.view.stats.illness ? 'warn' : 'info' },
+    illnessPatterns: { text: il.view.stats.count ? (il.view.stats.afterHighLoad >= il.view.stats.afterShortSleep && il.view.stats.afterHighLoad ? 'Il tuo punto debole sono i picchi di carico: la maggior parte degli episodi arriva dopo una settimana troppo piena.' : il.view.stats.afterShortSleep ? 'Il tuo punto debole è il sonno: gli episodi arrivano dopo notti più corte del solito.' : 'Nessun trigger dominante tra carico e sonno: guarda a stress, viaggi o stagionalità.') : 'Nessun episodio nel periodo: nessun pattern da analizzare.', tone: 'info' },
   };
 }
