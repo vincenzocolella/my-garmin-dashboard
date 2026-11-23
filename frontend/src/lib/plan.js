@@ -179,9 +179,13 @@ function compliance(session, a, block) {
 
 const fmtP = (sec) => (isNum(sec) ? `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}` : '—');
 
+/** A missed key session can still be recovered in the first days of the following week (Mon–Wed). */
+export const RECOVERY_DAYS = 3;
+
 export function matchPlan(activities, today) {
   const runs = activities.filter((a) => a.kind === 'run' && a.date >= PLAN_START);
   const used = new Set();
+  // weeks are processed in order, so a run in the recovery window goes to last week's missed key session first
   return PLAN_WEEKS.map((w) => {
     const weekState = w.end < today ? 'past' : w.start <= today ? 'current' : 'future';
     const weekRuns = runs.filter((a) => a.date >= w.start && a.date <= w.end);
@@ -197,15 +201,29 @@ export function matchPlan(activities, today) {
       assigned[p.si] = p;
       used.add(p.a.id);
     }
+    // late recovery: key sessions still open take a similar run from the next RECOVERY_DAYS days
+    const recoverUntil = addDays(w.end, RECOVERY_DAYS);
+    if (weekState === 'past') {
+      const lateRuns = runs.filter((a) => a.date > w.end && a.date <= recoverUntil && !used.has(a.id));
+      w.runs.forEach((s, si) => {
+        if (s.optional || assigned[si]) return;
+        const best = lateRuns.filter((a) => !used.has(a.id)).map((a) => ({ si, a, score: matchScore(s, a), late: true })).filter((p) => p.score >= 0.6).sort((x, y) => y.score - x.score)[0];
+        if (best) {
+          assigned[si] = best;
+          used.add(best.a.id);
+        }
+      });
+    }
     const sessions = w.runs.map((s, si) => {
       const m = assigned[si];
       const block = parseBlock(s);
       const state = m
         ? m.score >= 0.75 && m.a.distance / 1000 >= s.targetKm * 0.85 ? 'done' : 'partial'
         : weekState === 'past' ? (s.optional ? 'skipped' : 'missed') : weekState === 'current' ? 'todo' : 'future';
-      return { ...s, block, state, match: m ? { run: m.a, score: round(m.score, 2) } : null, compliance: m ? compliance(s, m.a, block) : null };
+      const recoverable = state === 'missed' && today <= recoverUntil;
+      return { ...s, block, state, recoverable, recoverUntil, match: m ? { run: m.a, score: round(m.score, 2), late: Boolean(m.late) } : null, compliance: m ? compliance(s, m.a, block) : null };
     });
-    return { ...w, weekState, sessions, extra: weekRuns.filter((a) => !Object.values(assigned).some((p) => p.a.id === a.id)) };
+    return { ...w, weekState, sessions, extra: weekRuns.filter((a) => !used.has(a.id)) };
   });
 }
 
@@ -250,9 +268,13 @@ export function planStatus(a) {
   const key = past.flatMap((w) => w.sessions.filter((s) => !s.optional));
   let consecutiveMissed = 0;
   for (const s of [...key].reverse()) {
+    if (s.recoverable) continue; // still recoverable this week: not missed yet
     if (s.state !== 'missed') break;
     consecutiveMissed++;
   }
+  // last week's key session, while it can still be recovered (or was just recovered)
+  const prevWeek = weeks.find((w) => w.week === current.week - 1);
+  const recovery = prevWeek?.sessions.find((s) => !s.optional && (s.recoverable || (s.match?.late && today <= s.recoverUntil))) ?? null;
   const gates = evaluateGates(weeks);
   const lastGraded = [...gates].reverse().find((g) => g.grade);
   const goal = consecutiveMissed >= 2 && (!lastGraded || lastGraded.grade === 'A') ? 'B' : lastGraded?.grade ?? 'A';
@@ -296,6 +318,7 @@ export function planStatus(a) {
   return {
     weeks,
     current,
+    recovery: recovery ? { ...recovery, week: prevWeek.week } : null,
     weekNo: current.week,
     totalWeeks: weeks.length,
     daysToRace: diffDays(RACE_DATE, today),

@@ -4,7 +4,7 @@ import { AIBox, Card, Kpi, TONE } from '../components/ui';
 import { planCoachText } from '../lib/insights';
 import { BASELINES, RACE_DATE, RACE_TIPS, RULES } from '../lib/plan';
 import { HR_ZONES, PACE_TABLE, PASSAGES, RACE_GOALS, TYPE_COLORS, TYPE_LABELS, ZONE_COLORS } from '../lib/planData';
-import { fmt, fmtDay, fmtDuration, fmtPace } from '../lib/util';
+import { fmt, fmtDay, fmtDuration, fmtPace, fmtWeekday } from '../lib/util';
 import { zoneSummary } from '../lib/zones';
 
 const STATE = {
@@ -19,8 +19,8 @@ const GRADE = { A: 'text-emerald border-emerald/50 bg-emerald/10', B: 'text-ambe
 const zoneColor = (z) => ZONE_COLORS[(z.match(/Z\d/g) ?? ['Z2']).at(-1)] ?? '#888';
 const raceDay = new Intl.DateTimeFormat('it-IT', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${RACE_DATE}T00:00:00Z`));
 
-function StateBadge({ state }) {
-  const s = STATE[state] ?? STATE.future;
+function StateBadge({ state, recoverable }) {
+  const s = recoverable ? { icon: '↺', label: 'Saltata · recuperabile', cls: 'text-amber border-amber/50 bg-amber/10' } : STATE[state] ?? STATE.future;
   return <span className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-semibold ${s.cls}`}>{s.icon} {s.label}</span>;
 }
 
@@ -35,7 +35,7 @@ function Session({ s, compact }) {
           {s.optional && <span className="rounded border border-edge px-1.5 py-0.5 text-[10px] text-gray-400">facoltativa</span>}
           <span className="text-sm font-semibold text-gray-100">{s.title}</span>
         </div>
-        <StateBadge state={s.state} />
+        <StateBadge state={s.state} recoverable={s.recoverable} />
       </div>
       {!compact && <p className="mt-2 text-xs leading-relaxed text-gray-300">{s.desc}</p>}
       <div className="num mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-gray-400">
@@ -57,6 +57,7 @@ function Session({ s, compact }) {
           <div className="num text-[11px] text-cyan">
             Garmin {fmtDay(run.date)} · {fmt(run.distance / 1000, 2)} km · {fmtDuration(run.duration)} · {fmtPace(run.pace)}/km · FC {fmt(run.avgHr)}
             <span className="ml-2 text-gray-500">somiglianza {Math.round(s.match.score * 100)}%</span>
+            {s.match.late && <span className="ml-2 rounded bg-amber/15 px-1 text-amber">recuperata in ritardo</span>}
           </div>
           {s.compliance?.notes.map((n, i) => (
             <div key={i} className={`mt-1 text-[11px] ${n.tone === 'good' ? 'text-emerald' : n.tone === 'warn' ? 'text-amber' : 'text-gray-400'}`}>{n.tone === 'good' ? '' : '• '}{n.text}</div>
@@ -97,6 +98,16 @@ function ThisWeek({ a }) {
   const advTone = { do: 'good', skip: 'bad', later: 'info', optional: 'warn' }[adv?.verdict];
   return (
     <Card title={`Settimana ${w.week} · ${fmtDay(w.start)}–${fmtDay(w.end)}${w.tag ? ` · ${w.tag}` : ''}`} subtitle={w.phaseTitle} icon={CalendarCheck} insightKey="planWeek" className="lg:col-span-2">
+      {p.recovery && (
+        <div className="mb-3 rounded-lg border border-amber/40 bg-amber/5 p-2">
+          <div className="mb-2 px-1 text-[11px] text-amber">
+            {p.recovery.match
+              ? `Recuperata la chiave della settimana ${p.recovery.week} con la corsa di ${fmtWeekday(p.recovery.match.run.date)}${w.sessions.some((x) => !x.optional && x.state === "todo") ? ": la chiave di questa settimana resta da fare" : ""}.`
+              : `Chiave della settimana ${p.recovery.week} saltata: puoi ancora recuperarla entro ${fmtWeekday(p.recovery.recoverUntil)}. Una corsa simile in questi giorni verrà contata per lei.`}
+          </div>
+          <Session s={p.recovery} compact />
+        </div>
+      )}
       <div className="space-y-3">
         {w.sessions.map((s) => <Session key={s.id} s={s} />)}
       </div>

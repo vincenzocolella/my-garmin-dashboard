@@ -439,10 +439,11 @@ export function planCoachText(a, persona) {
     (key.compliance?.notes ?? []).forEach((n) => lines.push(`  ${n.tone === 'good' ? '✓' : '•'} ${n.text}`));
   }
   if (opt) lines.push(`• Facoltativa: ${opt.title}. ${p.optionalAdvice?.text ?? (opt.state === 'done' ? 'Fatta ✓' : '')}`);
-  if (prevKey) lines.push(`• Settimana scorsa: ${prevKey.title} → ${{ done: 'fatta ✓', partial: 'fatta in parte', missed: 'saltata ✗' }[prevKey.state] ?? prevKey.state}.${prevKey.compliance?.notes?.filter((n) => n.tone === 'warn').map((n) => ` ${n.text}.`).join('') ?? ''}`);
+  if (prevKey) lines.push(`• Settimana scorsa: ${prevKey.title} → ${prevKey.recoverable ? `saltata, ma recuperabile fino a ${prevKey.recoverUntil.slice(8)}/${prevKey.recoverUntil.slice(5, 7)}: una corsa simile in questi giorni conta per lei` : { done: 'fatta ✓', partial: 'fatta in parte', missed: 'saltata ✗' }[prevKey.state] ?? prevKey.state}${prevKey.match?.late ? ' (recuperata in ritardo)' : ''}.${prevKey.compliance?.notes?.filter((n) => n.tone === 'warn').map((n) => ` ${n.text}.`).join('') ?? ''}`);
   lines.push('', 'REGOLE DEL PIANO APPLICATE AI TUOI DATI');
   if (p.consecutiveMissed >= 2) lines.push(`• ${p.consecutiveMissed} uscite chiave saltate di fila: l’obiettivo scende a ${p.goal}. Ripeti la settimana prima di andare avanti.`);
   else if (p.consecutiveMissed === 1) lines.push('• Hai saltato l’ultima uscita chiave: ripeti quella settimana invece di saltare avanti.');
+  if (p.recovery?.recoverable) lines.push(`• Prima la chiave da recuperare (${p.recovery.title}, ${p.recovery.targetKm} km), poi quella di questa settimana: tienile ad almeno 3 giorni di distanza.`);
   if (a.illness.current.active) lines.push('• Segnali di malessere in corso: rimanda la chiave di 2-3 giorni, il piano assorbe lo spostamento.');
   if (p.rhrAlarm) lines.push('• FC a riposo +5 bpm per 3 giorni: alleggerisci questa settimana (regola del piano).');
   if (p.habits.legClash.length) lines.push(`• I tuoi leg day di ${p.habits.legClash.join(' e ')} cadono nelle 48 h prima del lungo di ${p.habits.longDayName}: spostali a lunedì-mercoledì.`);
