@@ -1,10 +1,9 @@
-import { Bot, Dna, Dumbbell, Footprints, Loader2, MessageSquare, RefreshCw, Settings, Target, Zap } from 'lucide-react';
+import { Bot, Dna, Dumbbell, Footprints, Loader2, MessageSquare, RefreshCw, Settings, Zap } from 'lucide-react';
 import { SCENARIOS } from '../lib/demo';
 
 export const TABS = [
   { key: 'health', label: 'Salute & Recupero', icon: Dna },
-  { key: 'plan', label: 'Piano Sub-2', icon: Target },
-  { key: 'running', label: 'Corsa', icon: Footprints },
+  { key: 'running', label: 'Corsa & Mezza', icon: Footprints },
   { key: 'strength', label: 'Forza', icon: Dumbbell },
 ];
 export const RANGES = [7, 30, 90, 'max'];

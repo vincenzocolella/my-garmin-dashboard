@@ -3,7 +3,9 @@ import { Activity, ArrowDownUp, BarChart3, Flag, Gauge, Layers, LineChart, ListO
 import { C, SplitBar, TimeChart } from '../components/charts/Charts';
 import { AIBox, Card, Kpi, Legend, TONE } from '../components/ui';
 import { tsbZone } from '../lib/analytics';
-import { hrZones, overtrainingRisk, runningCoachText } from '../lib/insights';
+import { coachText, hrZones, overtrainingRisk } from '../lib/insights';
+import { HR_ZONES } from '../lib/planData';
+import { PlanSection } from './PlanTab';
 import { CLASS_LABEL, hrPaceTrend, runDetail, runsOverview } from '../lib/runs';
 import { ZONE_NAMES } from '../lib/zones';
 import { fmt, fmtDay, fmtDuration, fmtH, fmtPace, isNum, signed } from '../lib/util';
@@ -82,9 +84,10 @@ function ZonesCard({ a }) {
   const tot = zn.totals.reduce((s, x) => s + x, 0);
   const zoneHr = hrZones(a);
   const names = ['Z1 recupero', 'Z2 aerobico', 'Z3 tempo (grigia)', 'Z4 soglia', 'Z5 VO2max'];
+  const ranges = a.hrZoneCfg.ranges;
   const colors = ['#1D4ED8', C.cyan, C.amber, '#F97316', C.crimson];
   return (
-    <Card title="Polarized Check 80/20" subtitle={`Distribuzione del tempo in zona FC (FC max ${a.profile.maxHr}, ${a.profile.maxHrSource})`} icon={Layers} insightKey="zones">
+    <Card title="Zone FC & 80/20" subtitle={`Tempo in zona nel periodo · zone ${a.hrZoneCfg.source === 'garmin' ? 'da Garmin Connect' : 'standard'} (FC max ${a.profile.maxHr})`} icon={Layers} insightKey="zones">
       {zn.pct ? (
         <>
           <div className="mb-1 flex justify-between text-[11px] text-gray-400">
@@ -99,7 +102,7 @@ function ZonesCard({ a }) {
           <div className="mt-3 space-y-1.5">
             {zn.totals.map((s, i) => (
               <div key={i} className="flex items-center gap-2 text-[11px]">
-                <span className="w-28 text-gray-400">{names[i]}</span>
+                <span className="w-36 shrink-0 text-gray-400" title={`Piano scritto: ${HR_ZONES[i]?.bpm} bpm`}>{names[i]} <span className="num text-gray-600">{ranges[i][0]}–{ranges[i][1]}</span></span>
                 <div className="h-1.5 flex-1 rounded-full bg-edge"><div className="h-1.5 rounded-full" style={{ width: `${tot ? (s / tot) * 100 : 0}%`, background: colors[i] }} /></div>
                 <span className="num w-14 text-right text-gray-300">{fmtH(s / 3600)}</span>
               </div>
@@ -112,43 +115,10 @@ function ZonesCard({ a }) {
               { key: 'mid', label: 'Z3', type: 'stack', color: C.amber, format: (v) => fmtH(v) },
               { key: 'high', label: 'Z4-5', type: 'stack', color: C.crimson, format: (v) => fmtH(v) },
             ]} />
-          <p className="mt-2 text-[11px] text-gray-500">Tetto easy run: <span className="num text-cyan">{zoneHr.z2Top} bpm</span> · soglia ~<span className="num text-gray-300">{zoneHr.threshold} bpm</span></p>
+          <p className="mt-2 text-[11px] text-gray-500">Tetto easy run: <span className="num text-cyan">{zoneHr.z2Top} bpm</span> · soglia ~<span className="num text-gray-300">{zoneHr.threshold} bpm</span> · zone del piano scritto: {HR_ZONES.map((z) => `${z.z} ${z.bpm}`).join(' · ')}</p>
         </>
       ) : (
         <p className="py-8 text-center text-sm text-gray-600">Nessuna corsa con FC nel periodo.</p>
-      )}
-    </Card>
-  );
-}
-
-function RaceCard({ a }) {
-  const rc = a.race;
-  return (
-    <Card title="Race Predictor & VO2max" subtitle={`Modello VDOT (Daniels) da ${rc.vdotSource}, penalizzato per volume < 40 km/sett`} icon={Flag} insightKey="race">
-      <div className="mb-3 grid grid-cols-2 gap-4">
-        <Kpi label="VO2max" value={fmt(rc.vo2max, 1)} unit="ml/kg/min" big tone="info" />
-        <Kpi label="Volume 4 sett" value={fmt(rc.weeklyKm, 1)} unit="km/sett" tone={rc.weeklyKm < 25 ? 'warn' : undefined} />
-      </div>
-      <table className="w-full text-xs">
-        <thead>
-          <tr className="text-left text-[10px] uppercase tracking-wider text-gray-500"><th className="py-1">Gara</th><th>Stima</th><th>Passo</th><th>Garmin</th></tr>
-        </thead>
-        <tbody className="num">
-          {rc.predictions.map((p) => (
-            <tr key={p.key} className="border-t border-edge">
-              <td className="py-1.5 font-sans text-gray-300">{p.label}</td>
-              <td className={`font-bold ${p.key === 'half' ? 'text-cyan' : 'text-gray-100'}`}>{fmtDuration(p.model)}</td>
-              <td className="text-gray-400">{fmtPace(p.pace)}</td>
-              <td className="text-gray-500">{p.garmin ? fmtDuration(p.garmin) : '—'}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {rc.vo2Series.length > 1 && (
-        <div className="mt-4">
-          <div className="mb-1 text-[10px] uppercase tracking-[0.16em] text-gray-500">Trend VO2max</div>
-          <TimeChart rows={rc.vo2Series} height={100} series={[{ key: 'vo2max', label: 'VO2max', color: C.violet, dots: true }]} />
-        </div>
       )}
     </Card>
   );
@@ -466,17 +436,17 @@ function RunsOverview({ a }) {
 export function RunningTab({ a }) {
   const [selected, setSelected] = useState(null);
   const run = selected && a.runs.find((r) => r.id === selected.id);
-  const coach = useMemo(() => (an, persona) => runningCoachText(an, persona, run), [run]);
+  const coach = useMemo(() => (an, persona) => coachText(an, persona, run), [run]);
   return (
     <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
       <PmcCard a={a} />
-      <AIBox title={run ? `AI Running Coach · ${run.name}` : 'AI Running Coach'} task="runningCoach" heuristic={coach} extra={run ? { run } : undefined} />
+      <AIBox title={run ? `AI Coach · ${run.name}` : 'AI Coach corsa & mezza'} task="coach" heuristic={coach} extra={run ? { run } : undefined} />
       <EfficiencyCard a={a} />
       <ZonesCard a={a} />
-      <RaceCard a={a} />
       <RunsTable a={a} selected={run} onSelect={setSelected} />
       {run && <RunDetail a={a} run={run} onClose={() => setSelected(null)} />}
       <RunsOverview a={a} />
+      <PlanSection a={a} />
     </div>
   );
 }

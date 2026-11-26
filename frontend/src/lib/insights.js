@@ -206,9 +206,16 @@ export function cardInsights(a) {
     ? { text: `${a.zones.pct.mid >= 25 ? 'Troppo tempo nella zona grigia: le facili non sono abbastanza facili e le dure non abbastanza dure.' : a.zones.pct.low >= 75 ? 'Distribuzione polarizzata corretta.' : 'Vicino all’80/20: rallenta un po’ le uscite facili.'}${a.zones.easyTooHard ? ` ${a.zones.easyTooHard} easy run troppo veloci.` : ''}`, tone: a.zones.pct.mid >= 25 ? 'warn' : 'good' }
     : { text: 'Nessuna corsa con dati di frequenza cardiaca.', tone: 'info' };
   const half = a.race.predictions.find((x) => x.key === 'half');
+  // half-marathon estimate vs plan goals A/B/C (1:59 / 2:03 / 2:10)
+  const est = half?.model;
+  const goals = [['A', 7140], ['B', 7380], ['C', 7800]];
+  const hit = isNum(est) ? goals.find(([, t]) => est <= t + 59) : null;
   out.race = {
-    text: `Potenziale sulla mezza ${fmtDuration(half?.model)}${a.race.weeklyKm < 35 ? ': sotto i 35 km a settimana la tenuta degli ultimi km è il vero limite.' : ': il volume attuale lo sostiene.'}`,
-    tone: a.race.weeklyKm < 25 ? 'warn' : 'info',
+    text: !isNum(est) ? 'Serve il VO2max o una corsa recente per stimare la mezza.'
+      : hit?.[0] === 'A' ? `Oggi vali circa ${fmtDuration(est)}: il sub-2 è già nelle gambe, il piano serve a tenerlo fino al km 21.`
+      : hit ? `Oggi vali circa ${fmtDuration(est)}, da obiettivo ${hit[0]}: per l’A mancano circa ${Math.round((est - 7140) / 60)} minuti.`
+      : `Oggi vali circa ${fmtDuration(est)}, sopra anche l’obiettivo C: costruisci volume prima di pensare al ritmo.`,
+    tone: hit?.[0] === 'A' ? 'good' : hit ? 'warn' : 'bad',
   };
   const recentConf = a.strength.conflicts.filter((c) => diffDays(a.today, c.date) <= 14);
   out.hybrid = recentConf.length
@@ -301,13 +308,18 @@ export function sessionCritique(a, run) {
   return out.join('\n');
 }
 
-export function runningCoachText(a, persona, run) {
+/** Single coach for running + the half-marathon plan: session critique → plan week → load & intensity → next run. */
+export function coachText(a, persona, run) {
+  const planOn = Boolean(a.plan) && a.today >= PLAN_START && a.today <= RACE_DATE;
+  const p = a.plan;
   const f = findings(a).filter((x) => x.area === 'run');
   const n = nextSession(a);
-  const risk = overtrainingRisk(a);
-  const header = `${openers[persona](a, Math.max(0, ...f.map((x) => x.sev)))}\nRischio overtraining: ${risk}/100 · CTL ${fmt(a.pmc.latest?.ctl, 1)} · TSB ${fmt(a.pmc.latest?.tsb, 1)} · ${fmt(a.race.weeklyKm, 1)} km/sett`;
+  const planSev = planOn ? (p.consecutiveMissed >= 2 || a.illness.current.active ? 3 : p.consecutiveMissed ? 2 : 0) : 0;
+  const header = `${openers[persona](a, Math.max(planSev, ...f.map((x) => x.sev)))}\nRischio overtraining: ${overtrainingRisk(a)}/100 · CTL ${fmt(a.pmc.latest?.ctl, 1)} · TSB ${fmt(a.pmc.latest?.tsb, 1)} · ${fmt(a.race.weeklyKm, 1)} km/sett`;
   const critique = run ? `\n\nCRITICA SESSIONE\n${sessionCritique(a, run)}` : '';
-  return render(f, persona, header + critique + '\n\nMACRO-CICLO', `PROSSIMA SESSIONE IDEALE\n• ${n.title}\n  motivo: ${n.why}`);
+  const plan = planOn ? `\n\n${planLines(a).join('\n')}` : '';
+  const footer = persona === 'sergeant' ? `ORDINE: ${n.title}. Motivo: ${n.why}. Esegui.` : `PROSSIMA USCITA\n• ${n.title}\n  motivo: ${n.why}`;
+  return render(f, persona, `${header}${critique}${plan}\n\nCARICO E INTENSITÀ`, footer);
 }
 
 export function hybridText(a, persona) {
@@ -425,15 +437,15 @@ export function illnessText(a, persona) {
 }
 
 // --------------------------------------------------------------------- half-marathon plan coach
-export function planCoachText(a, persona) {
+function planLines(a) {
   const p = a.plan;
   const w = p.current;
   const key = w.sessions.find((s) => !s.optional);
   const opt = w.sessions.find((s) => s.optional);
   const prevWeek = p.weeks.find((x) => x.week === w.week - 1);
   const prevKey = prevWeek?.sessions.find((s) => !s.optional);
-  const lines = [openers[persona](a, p.consecutiveMissed >= 2 || a.illness.current.active ? 3 : p.consecutiveMissed ? 2 : 0), ''];
-  lines.push(`SETTIMANA ${w.week}/${p.totalWeeks} · ${w.phaseTitle}${w.tag ? ` · ${w.tag}` : ''} · obiettivo ${p.goal} (${p.goalPace}/km sul Garmin)`);
+  const lines = [];
+  lines.push(`PIANO MEZZA · SETTIMANA ${w.week}/${p.totalWeeks} · ${w.phaseTitle}${w.tag ? ` · ${w.tag}` : ''} · obiettivo ${p.goal} (${p.goalPace}/km sul Garmin)`);
   if (key) {
     lines.push(`• Chiave: ${key.title} (${key.targetKm} km, ${key.pace ?? ''}, FC ${key.hr ?? '—'}) → ${key.state === 'done' ? 'FATTA ✓' : key.state === 'partial' ? 'fatta in parte' : `da fare, idealmente ${p.habits.longDayName}`}.`);
     (key.compliance?.notes ?? []).forEach((n) => lines.push(`  ${n.tone === 'good' ? '✓' : '•'} ${n.text}`));
@@ -453,8 +465,7 @@ export function planCoachText(a, persona) {
   if (next) lines.push(`• Prossimo controllo: settimana ${next.week} (${next.when}). A se ${next.a}.`);
   const graded = p.gates.filter((g) => g.grade);
   if (graded.length) lines.push(`• Controlli: ${graded.map((g) => `sett. ${g.week} → ${g.grade}`).join(', ')}.`);
-  lines.push('', persona === 'sergeant' ? `ORDINE: ${nextSession(a).title}. Il sub-2 non arriva per grazia ricevuta.` : `Oggi: ${nextSession(a).title} (${nextSession(a).why}).`);
-  return lines.join('\n');
+  return lines;
 }
 
 export function extraCardInsights(a) {

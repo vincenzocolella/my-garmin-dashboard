@@ -52,7 +52,7 @@ export const INFO = {
   },
   zones: {
     what: 'Distribuzione del tempo di corsa nelle zone di FC, per verificare il modello polarizzato 80/20.',
-    how: 'Tempo in zona fornito da Garmin (o stimato dalla FC media); Z1-2 facile, Z3 zona grigia, Z4-5 soglia e VO2max. Una corsa “facile” è troppo veloce se > 30% del tempo è in Z3+.',
+    how: 'Tempo in zona fornito da Garmin (o stimato dalla FC media); Z1-2 facile, Z3 zona grigia, Z4-5 soglia e VO2max. Accanto a ogni zona i tuoi limiti in bpm (passa il mouse per quelli del piano scritto). Una corsa “facile” è troppo veloce se > 30% del tempo è in Z3+.',
     read: 'Obiettivo ≈ 80% Z1-2, ≤ 5-10% Z3, 10-15% Z4-5. Troppa Z3 accumula fatica senza dare né base né velocità.',
   },
   race: {
@@ -96,13 +96,13 @@ export const INFO = {
     read: 'Se ti fermi o cammini durante un controllo, scegli direttamente C.',
   },
   planZones: {
-    what: 'Ritmi del piano e zone FC attive, confrontate con quelle scritte nel piano.',
+    what: 'Ritmi del piano da leggere sul Garmin e le regole del piano. Le tue zone FC, con il confronto con quelle scritte nel piano, sono nella card “Zone FC & 80/20”.',
     how: 'Le zone attive sono lette da Garmin Connect a ogni sincronizzazione (profilo corsa, o predefinito). Se non disponibili: standard % FCR con FC max 195, riposo 57 e limiti 29/58/71/80/91%. Puoi forzare le zone standard dalle Impostazioni.',
     read: 'Guida con lo sforzo e il ritmo; la FC è il controllo. Negli allunghi e nelle ripetute brevi la FC non fa in tempo a salire.',
   },
   planRace: {
-    what: 'Obiettivi di gara, passaggi intermedi e strategia.',
-    how: 'Tempi riferiti ai cartelli ufficiali; i ritmi sono quelli da leggere sul Garmin (misura circa lo 0,6% in più).',
+    what: 'Dove sei oggi rispetto agli obiettivi A/B/C della mezza, con passaggi intermedi e strategia di gara.',
+    how: 'Stima di oggi: formula VDOT di Daniels/Gilbert sul VO2max Garmin (o sul miglior sforzo recente), penalizzata se corri meno di 40 km a settimana (+7% sulla mezza); accanto la previsione Garmin. Un obiettivo è “alla portata” se la stima è entro un minuto dal suo tempo. Tempi riferiti ai cartelli ufficiali; i ritmi sono quelli da leggere sul Garmin (misura circa lo 0,6% in più).',
     read: 'Parti prudente: nessun km sotto 5:31 prima del km 16.',
   },
   planRules: { what: 'Le regole del piano originale.', how: 'Applicate automaticamente dall’AI Plan Coach ai tuoi dati.', read: '' },

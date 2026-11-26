@@ -1,11 +1,9 @@
 import { useState } from 'react';
-import { BookOpen, CalendarCheck, ChevronDown, Flag, Gauge, ListChecks, Medal, Target } from 'lucide-react';
-import { AIBox, Card, Kpi, TONE } from '../components/ui';
-import { planCoachText } from '../lib/insights';
+import { BookOpen, CalendarCheck, ChevronDown, Gauge, ListChecks, Medal, Target } from 'lucide-react';
+import { Card, Kpi, TONE } from '../components/ui';
 import { BASELINES, RACE_DATE, RACE_TIPS, RULES } from '../lib/plan';
-import { HR_ZONES, PACE_TABLE, PASSAGES, RACE_GOALS, TYPE_COLORS, TYPE_LABELS, ZONE_COLORS } from '../lib/planData';
+import { PACE_TABLE, PASSAGES, RACE_GOALS, TYPE_COLORS, TYPE_LABELS, ZONE_COLORS } from '../lib/planData';
 import { fmt, fmtDay, fmtDuration, fmtPace, fmtWeekday } from '../lib/util';
-import { zoneSummary } from '../lib/zones';
 
 const STATE = {
   done: { icon: '✓', label: 'Fatta', cls: 'text-emerald border-emerald/50 bg-emerald/10' },
@@ -151,53 +149,37 @@ function Gates({ a }) {
   );
 }
 
-function PacesZones({ a }) {
-  const cfg = a.hrZoneCfg;
+/** The half-marathon target: today's estimate (VDOT model + Garmin) against goals A/B/C, then passages and strategy. */
+function Race({ a }) {
+  const rc = a.race;
+  const half = rc.predictions.find((p) => p.key === 'half');
+  const goalSec = (t) => {
+    const [h, m] = t.split(':').map(Number);
+    return h * 3600 + m * 60;
+  };
+  const est = half?.model ?? null;
+  const reach = est ? RACE_GOALS.find((g) => est <= goalSec(g.time) + 59) : null;
   return (
-    <Card title="Ritmi e zone" subtitle={`Zone attive: ${cfg.label}`} icon={ListChecks} info="planZones">
-      <table className="w-full text-xs">
-        <tbody>
-          {PACE_TABLE.map((r) => (
-            <tr key={r.t} className="border-t border-edge">
-              <td className="py-1.5 text-gray-300">{r.t}</td>
-              <td className="num font-semibold text-gray-100">{r.pace}</td>
-              <td className="num text-gray-500">{r.hr}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <div className="mt-4 text-[10px] uppercase tracking-[0.16em] text-gray-500">Zone FC · attive vs piano scritto</div>
-      <table className="mt-1 w-full text-xs">
-        <thead><tr className="text-left text-[10px] text-gray-500"><th className="py-1">Zona</th><th>{cfg.methodLabel}</th><th>Tue (bpm)</th><th>Piano</th></tr></thead>
-        <tbody>
-          {zoneSummary(cfg).map((z, i) => (
-            <tr key={z.z} className="border-t border-edge">
-              <td className="py-1.5"><b style={{ color: ZONE_COLORS[z.z] }}>{z.z}</b> <span className="text-gray-400">{z.name}</span></td>
-              <td className="num text-gray-500">{z.pct}</td>
-              <td className="num font-semibold text-cyan">{z.lo}–{z.hi}</td>
-              <td className="num text-gray-500">{HR_ZONES[i]?.bpm}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </Card>
-  );
-}
-
-function Race() {
-  return (
-    <Card title="Gara" subtitle="Obiettivi, passaggi e strategia" icon={Medal} info="planRace">
+    <Card title={`Gara · ${raceDay}`} subtitle={`Dove sei oggi rispetto agli obiettivi · stima da ${rc.vdotSource}`} icon={Medal} insightKey="race" info="planRace">
+      <div className="mb-3 grid grid-cols-3 gap-3">
+        <Kpi label="Stima mezza oggi" value={fmtDuration(est)} sub={half?.pace ? `${fmtPace(half.pace)}/km` : undefined} tone={reach ? (reach.label.startsWith('A') ? 'good' : 'warn') : 'bad'} />
+        <Kpi label="Garmin" value={half?.garmin ? fmtDuration(half.garmin) : '—'} />
+        <Kpi label="VO2max" value={fmt(rc.vo2max, 1)} sub={`${fmt(rc.weeklyKm, 1)} km/sett`} />
+      </div>
       <div className="space-y-2">
-        {RACE_GOALS.map((g) => (
-          <div key={g.label} className="rounded-lg border border-edge bg-void/50 p-2.5">
-            <div className="flex items-baseline justify-between">
-              <span className="text-xs font-semibold text-gray-200">{g.label}</span>
-              <span className="num text-lg font-bold text-cyan">{g.time}</span>
+        {RACE_GOALS.map((g) => {
+          const ok = est && est <= goalSec(g.time) + 59;
+          return (
+            <div key={g.label} className={`rounded-lg border ${ok ? 'border-emerald/40' : 'border-edge'} bg-void/50 p-2.5`}>
+              <div className="flex items-baseline justify-between">
+                <span className="text-xs font-semibold text-gray-200">{g.label} {ok && <span className="ml-1 text-[10px] text-emerald">alla portata oggi</span>}</span>
+                <span className="num text-lg font-bold text-cyan">{g.time}</span>
+              </div>
+              <div className="num text-[11px] text-gray-400">{g.real}/km reali · {g.garmin}/km Garmin</div>
+              <div className="text-[11px] text-gray-500">{g.note}</div>
             </div>
-            <div className="num text-[11px] text-gray-400">{g.real}/km reali · {g.garmin}/km Garmin</div>
-            <div className="text-[11px] text-gray-500">{g.note}</div>
-          </div>
-        ))}
+          );
+        })}
       </div>
       <table className="mt-3 w-full text-[11px]">
         <thead><tr className="text-left text-[10px] uppercase text-gray-500"><th>Obiettivo</th><th>5 km</th><th>10 km</th><th>15 km</th><th>20 km</th></tr></thead>
@@ -209,8 +191,31 @@ function Race() {
         {RACE_TIPS.map((t) => <li key={t}>• {t}</li>)}
       </ul>
       <div className="mt-3 border-t border-edge pt-2 text-[11px] text-gray-500">
-        {BASELINES.map((b) => <div key={b.date}><b className="text-gray-300">{fmtDay(b.date)} {b.label}</b> · {fmtDuration(b.time)} · FC {b.hr} · {b.note}</div>)}
+        <div className="mb-1 text-[10px] uppercase tracking-[0.16em]">Altre distanze (stima oggi)</div>
+        <div className="num flex flex-wrap gap-x-4 text-gray-300">{rc.predictions.filter((p) => p.key !== 'half').map((p) => <span key={p.key}>{p.label} {fmtDuration(p.model)}</span>)}</div>
+        {BASELINES.map((b) => <div key={b.date} className="mt-1"><b className="text-gray-300">{fmtDay(b.date)} {b.label}</b> · {fmtDuration(b.time)} · FC {b.hr} · {b.note}</div>)}
       </div>
+    </Card>
+  );
+}
+
+function PacesRules() {
+  return (
+    <Card title="Ritmi e regole del piano" subtitle="Ritmi da leggere sul Garmin · le zone FC sono nella card 80/20" icon={ListChecks} info="planZones">
+      <table className="w-full text-xs">
+        <tbody>
+          {PACE_TABLE.map((r) => (
+            <tr key={r.t} className="border-t border-edge">
+              <td className="py-1.5 text-gray-300">{r.t}</td>
+              <td className="num font-semibold text-gray-100">{r.pace}</td>
+              <td className="num text-gray-500">{r.hr}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <ul className="mt-4 space-y-2 border-t border-edge pt-3 text-xs leading-relaxed text-gray-300">
+        {RULES.map((r) => <li key={r.title}><b className="text-gray-100">{r.title}.</b> {r.text}</li>)}
+      </ul>
     </Card>
   );
 }
@@ -251,27 +256,24 @@ function FullPlan({ a }) {
   );
 }
 
-function Rules() {
+/** "Preparazione mezza maratona": appended at the bottom of the running tab. */
+export function PlanSection({ a }) {
   return (
-    <Card title="Le regole del piano" subtitle="Dal tuo training-app, applicate in automatico dall’AI Plan Coach" icon={Flag} info="planRules">
-      <ul className="space-y-2.5 text-xs leading-relaxed text-gray-300">
-        {RULES.map((r) => <li key={r.title}><b className="text-gray-100">{r.title}.</b> {r.text}</li>)}
-      </ul>
-    </Card>
-  );
-}
-
-export function PlanTab({ a }) {
-  return (
-    <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+    <>
+      <div className="flex items-center gap-3 pt-4 lg:col-span-3">
+        <Target size={16} className="text-cyan" />
+        <h2 className="text-sm font-semibold uppercase tracking-[0.2em] text-gray-200">Preparazione mezza maratona</h2>
+        <span className="text-xs text-gray-500">piano sub-2:00 · gara il {raceDay}</span>
+        <div className="h-px flex-1 bg-edge" />
+      </div>
       <Overview a={a} />
       <ThisWeek a={a} />
-      <AIBox title="AI Plan Coach" icon={Target} task="plan" heuristic={planCoachText} info="planWeek" />
       <Gates a={a} />
-      <PacesZones a={a} />
-      <Race />
       <FullPlan a={a} />
-      <Rules />
-    </div>
+      <div className="min-w-0 space-y-5">
+        <Race a={a} />
+        <PacesRules />
+      </div>
+    </>
   );
 }
