@@ -133,6 +133,13 @@ export function dailySummary(a, now = new Date()) {
         if (isNum(T.hrv)) facts.push({ label: 'Variabilità', value: `${fmt(T.hrv)} ms`, tone: hrvBad ? 'bad' : hrvGood ? 'good' : undefined });
         if (hrvBad || rhrBad) issues.push({ key: 'autonomic', weight: 1.5 + (hrvBad && rhrBad ? 1 : 0) });
       }
+      const sig = ill.get(T.date)?.signals ?? [];
+      if (sig.includes('respirazione ↑')) {
+        text.push(`Il respiro durante il sonno è stato più rapido del solito (${fmt(T.respiration, 1)} atti al minuto): insieme agli altri segnali è uno dei primi indizi di un raffreddore o di un’infezione in arrivo.`);
+        facts.push({ label: 'Respirazione', value: `${fmt(T.respiration, 1)}/min`, tone: 'bad' });
+        issues.push({ key: 'autonomic', weight: 1.5 });
+      }
+      if (sig.includes('SpO2 ↓')) text.push(`Anche l’ossigenazione notturna era più bassa del solito (${fmt(T.spo2)}%).`);
       const wakeBb = intr && a.ans.intraday.sleepTo != null ? intr.rows[a.ans.intraday.sleepTo]?.bb : T.bbMax;
       if (isNum(wakeBb)) {
         text.push(wakeBb >= 75 ? `Al risveglio la batteria era a ${fmt(wakeBb)}: buona ricarica.` : wakeBb >= 50 ? `Al risveglio la batteria era a ${fmt(wakeBb)}: ricarica parziale.` : `Al risveglio la batteria era solo a ${fmt(wakeBb)}: la notte non è bastata a ricaricarti.`);
@@ -289,7 +296,7 @@ export function dailySummary(a, now = new Date()) {
     oggi_disponibile: todayAvailable,
     giudizio_euristico: { stato: chip, frase: headline },
     ieri: Y ? { data: Y.date, stress_medio: Y.stress, stress_solito: round(nStress?.m), passi: Y.steps, passi_soliti: round(nSteps?.m), batteria_caricata: Y.bbCharged, batteria_consumata: Y.bbDrained, batteria_min: Y.bbMin, attivita: a.activities.filter((x) => x.date === Y.date).map((x) => x.name), fuori_norma: Boolean(ill.get(Y.date)?.flagged) } : null,
-    stanotte: T ? { sonno: fmtH(hoursOf(T)), sonno_solito: fmtH(nSleep?.m), bisogno: fmtH(need), qualita: T.sleep?.score ?? null, profondo_min: T.sleep?.deep ? Math.round(T.sleep.deep / 60) : null, rem_min: T.sleep?.rem ? Math.round(T.sleep.rem / 60) : null, sveglio_min: T.sleep?.awake ? Math.round(T.sleep.awake / 60) : null, fc_riposo: T.rhr, fc_riposo_vs_solito: round(rT?.rhrDelta, 1), hrv_ms: T.hrv, hrv_vs_solito_pct: rT?.hrvPct, batteria_max: T.bbMax } : null,
+    stanotte: T ? { sonno: fmtH(hoursOf(T)), sonno_solito: fmtH(nSleep?.m), bisogno: fmtH(need), qualita: T.sleep?.score ?? null, profondo_min: T.sleep?.deep ? Math.round(T.sleep.deep / 60) : null, rem_min: T.sleep?.rem ? Math.round(T.sleep.rem / 60) : null, sveglio_min: T.sleep?.awake ? Math.round(T.sleep.awake / 60) : null, fc_riposo: T.rhr, fc_riposo_vs_solito: round(rT?.rhrDelta, 1), hrv_ms: T.hrv, hrv_vs_solito_pct: rT?.hrvPct, respirazione: T.respiration ?? null, respirazione_vs_solito: ill.get(T.date)?.respDelta ?? null, spo2: T.spo2 ?? null, spo2_vs_solito: ill.get(T.date)?.spo2Delta ?? null, batteria_max: T.bbMax } : null,
     oggi_finora: todayAvailable ? { batteria_ora: intrD.current?.bb, stress_medio_da_sveglio: intrD.dayMean, passi: T.steps, finestre: intrD.windows.filter((w) => w.tone !== 'good').map((w) => `${w.label} ${intrD.rows[w.from].label}-${intrD.rows[w.to].label}`) } : null,
     settimana: {
       sonno_medio: fmtH(mean(rows.slice(ti - 6, ti + 1).map(hoursOf))),

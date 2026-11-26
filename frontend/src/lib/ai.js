@@ -37,7 +37,7 @@ export function buildContext(a) {
       componenti_0_100: { sistema_nervoso_40pct: r.autonomic, sonno_30pct: r.sleep, stress_ieri_15pct: r.stress, carico_allenamento_15pct: r.load },
       hrv_notte_z_ln: round(r.hrvZ, 2), hrv_7gg_in_unita_swc: round(r.hrv7Z, 2), hrv_7gg_ms: r.hrv7ms, zona_normale_hrv_ms: [round(r.hrvBase.swcLo), round(r.hrvBase.swcHi)], fc_riposo_delta: round(r.rhrDelta, 1), rapporto_fatica_forma: r.loadRatio,
     },
-    oggi_vitali: { hrv_ms: a.latest.hrv, hrv_status: a.latest.hrvStatus, fc_riposo: a.latest.rhr, stress_medio: a.latest.stress, bb_max: a.latest.bbMax, bb_min: a.latest.bbMin, passi: a.latest.steps, sonno: fmtH(a.sleep.lastNight?.hours), sonno_score: a.sleep.lastNight?.score },
+    oggi_vitali: { hrv_ms: a.latest.hrv, hrv_status: a.latest.hrvStatus, fc_riposo: a.latest.rhr, stress_medio: a.latest.stress, bb_max: a.latest.bbMax, bb_min: a.latest.bbMin, passi: a.latest.steps, respirazione_notte: a.latest.respiration ?? null, spo2_notte: a.latest.spo2 ?? null, sonno: fmtH(a.sleep.lastNight?.hours), sonno_score: a.sleep.lastNight?.score },
     longevity: {
       score: a.longevity.score, finestra_giorni: a.longevity.window, eta: a.longevity.age, sesso: a.longevity.sex, copertura_pct: a.longevity.coverage,
       componenti: a.longevity.parts.map((x) => ({ voce: x.label, peso_pct: x.weight, punteggio: x.score, valore: x.value, riferimento: x.ref })),
@@ -69,7 +69,7 @@ export function buildContext(a) {
       attivo_ora: a.illness.current.active,
       segnali_oggi: a.illness.current.today?.signals,
       giorni_analizzati: a.illness.stats.daysScanned,
-      episodi: a.illness.episodes.slice(0, 8).map((e) => ({ dal: e.start, al: e.end, giorni: e.days, tipo: e.label, confidenza: e.confidence, fc_riposo_max_delta: e.markers.rhr, hrv_min_pct: e.markers.hrv, carico_prima_x: e.loadRatio, sonno_prima_delta: fmtH(e.sleepBefore, { signed: true }), sedute_dure_durante: e.hardDuring.length, rientro_giorni: e.recoveryDays })),
+      episodi: a.illness.episodes.slice(0, 8).map((e) => ({ dal: e.start, al: e.end, giorni: e.days, tipo: e.label, confidenza: e.confidence, fc_riposo_max_delta: e.markers.rhr, hrv_min_pct: e.markers.hrv, respirazione_max_delta: e.markers.resp, carico_prima_x: e.loadRatio, sonno_prima_delta: fmtH(e.sleepBefore, { signed: true }), sedute_dure_durante: e.hardDuring.length, rientro_giorni: e.recoveryDays })),
     },
     piano_mezza: planContext(a.plan),
     zone_fc: { fonte: a.hrZoneCfg.label, zone_bpm: a.hrZoneCfg.ranges.map(([lo, hi], i) => `Z${i + 1} ${lo}-${hi}`) },

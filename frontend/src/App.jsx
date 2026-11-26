@@ -16,6 +16,16 @@ import { RunningTab } from './tabs/RunningTab';
 import { StrengthTab } from './tabs/StrengthTab';
 
 const DAYS_CACHE_KEY = 'bio-os-days-v1';
+// last activities/profile/intraday from Garmin: with the cached days, the app still shows real data offline
+const LAST_KEY = 'bio-os-last-v1';
+const readLast = (base) => {
+  try {
+    const c = JSON.parse(localStorage.getItem(LAST_KEY) ?? 'null');
+    return c?.base === base ? c : null;
+  } catch {
+    return null;
+  }
+};
 const HISTORY_DAYS = 365; // "Max" range: everything the browser has cached, backfilled in the background
 
 function readDaysCache(base) {
@@ -35,6 +45,10 @@ function writeDaysCache(base, days) {
     /* quota exceeded: the app still works, it just refetches */
   }
 }
+// days cached before overnight respiration/SpO2 existed: refetch the recent ones so the symptom radar has a baseline
+const REFETCH_DAYS = 60;
+const legacyBackend = { current: false }; // old backend without those fields: don't refetch in a loop
+const needsFetch = (day, date, today) => !day || (!legacyBackend.current && !('respiration' in day) && date >= addDays(today, -REFETCH_DAYS));
 const daysFromCache = (cache, today) => Object.values(cache).filter((d) => d.date >= addDays(today, -(HISTORY_DAYS - 1)) && d.date <= today).sort((x, y) => (x.date < y.date ? -1 : 1));
 
 export default function App() {
@@ -89,14 +103,20 @@ export default function App() {
         const today = localToday();
         let since = addDays(today, -1);
         for (let d = addDays(today, -(fetchDays - 1)); d <= addDays(today, -2); d = addDays(d, 1)) {
-          if (!cache[d]) {
+          if (needsFetch(cache[d], d, today)) {
             since = d;
             break;
           }
         }
         const ds = await apiFetch(conn, `/telemetry?days=${fetchDays}&since=${since}${refresh ? '&refresh=true' : ''}`, { signal: ctrl.signal });
+        if (ds.days.length && !ds.days.some((d) => 'respiration' in d)) legacyBackend.current = true;
         ds.days.forEach((d) => (cache[d.date] = d));
         writeDaysCache(conn.apiBase, cache);
+        try {
+          localStorage.setItem(LAST_KEY, JSON.stringify({ base: conn.apiBase, source: ds.source, today: ds.today, generatedAt: ds.generatedAt, activities: ds.activities, profile: ds.profile, intraday: ds.intraday }));
+        } catch {
+          /* quota: offline fallback just won't have activities */
+        }
         setDataset({ ...ds, days: daysFromCache(cache, today) });
         setStatus({ state: 'live', at: new Date() });
       } catch (e) {
@@ -106,7 +126,11 @@ export default function App() {
           setSettingsOpen(true);
         }
         setStatus({ state: 'error', error: e.message, at: new Date() });
-        setDataset((prev) => (prev && prev.source !== 'demo' ? prev : generateDemo(scenario)));
+        // offline / backend asleep: last synced Garmin data from this device, demo only if there is none
+        const last = readLast(conn.apiBase);
+        const cachedDays = daysFromCache(readDaysCache(conn.apiBase), localToday());
+        const offline = last && cachedDays.length ? { ...last, today: localToday(), days: cachedDays, intraday: last.intraday?.date === localToday() ? last.intraday : null } : null;
+        setDataset((prev) => (prev && prev.source !== 'demo' ? prev : offline ?? generateDemo(scenario)));
       }
     },
     [dataSource, scenario, imported, conn, fetchDays],
@@ -125,7 +149,7 @@ export default function App() {
       const today = localToday();
       const cache = readDaysCache(conn.apiBase);
       const missing = [];
-      for (let d = addDays(today, -(HISTORY_DAYS - 1)); d <= addDays(today, -2); d = addDays(d, 1)) if (!cache[d]) missing.push(d);
+      for (let d = addDays(today, -(HISTORY_DAYS - 1)); d <= addDays(today, -2); d = addDays(d, 1)) if (needsFetch(cache[d], d, today)) missing.push(d);
       const chunks = [];
       for (const d of missing) {
         const last = chunks.at(-1);
@@ -229,7 +253,7 @@ export default function App() {
             <ChatDrawer open={chatOpen} onClose={() => setChatOpen(false)} />
           </AIProvider>
         )}
-        <footer className="pb-6 pt-2 text-center text-[10px] uppercase tracking-[0.2em] text-gray-700">
+        <footer style={{ paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom))' }} className="pt-2 text-center text-[10px] uppercase tracking-[0.2em] text-gray-700">
           Garmin Dashboard · dati via proxy non ufficiale · non è un dispositivo medico
         </footer>
       </main>

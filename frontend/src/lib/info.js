@@ -113,7 +113,7 @@ export const INFO = {
   },
   illnessNow: {
     what: 'Radar sintomi: se il tuo corpo mostra oggi segnali compatibili con un malessere.',
-    how: 'Ogni giorno confronta FC a riposo, HRV, stress, score sonno e Body Battery con la mediana dei tuoi 30 giorni precedenti (robusta: pochi giorni anomali non la spostano). Allarme quando FC riposo ↑ e HRV ↓ insieme oltre 1 deviazione e l’indice combinato supera la soglia, o un solo segnale è molto forte.',
+    how: 'Ogni giorno confronta FC a riposo, HRV, respirazione e SpO2 notturne, stress, score sonno e Body Battery con la mediana dei tuoi 30 giorni precedenti (robusta: pochi giorni anomali non la spostano). Allarme quando FC riposo ↑ e HRV ↓ insieme oltre 1 deviazione e l’indice combinato supera la soglia, oppure quando la respirazione notturna sale (≥ 1,5 deviazioni) insieme a FC ↑ o HRV ↓, o quando un solo segnale è molto forte. La respirazione più rapida durante il sonno è uno dei primi segni di infezione. Sul Forerunner 165 la SpO2 arriva solo con Pulse Ox attivo “durante il sonno”; la temperatura cutanea non è misurata da questo modello.',
     read: 'Indice 0-100: 50 = soglia di allarme. È statistica sui dati dell’orologio, non una diagnosi.',
   },
   illnessTimeline: {
@@ -123,7 +123,7 @@ export const INFO = {
   },
   illnessEpisodes: {
     what: 'I periodi in cui stavi probabilmente male, con tipo, durata e cosa hai fatto nel frattempo.',
-    how: 'Giorni anomali raggruppati (un giorno normale in mezzo è tollerato). Tipo: malattia se FC riposo ≥ +4 bpm e HRV ≤ −12% per 2+ giorni senza un picco di carico; sovraccarico se il carico dei 7 giorni prima era ≥ 1,3× il normale e non ti sei fermato; debito di sonno se preceduto da notti corte; altrimenti stress/malessere generico.',
+    how: 'Giorni anomali raggruppati (un giorno normale in mezzo è tollerato). Tipo: malattia se FC riposo ≥ +4 bpm e HRV ≤ −12% per 2+ giorni, o respirazione notturna ≥ +1 atto/min con FC ↑ o HRV ↓, senza un picco di carico; sovraccarico se il carico dei 7 giorni prima era ≥ 1,3× il normale e non ti sei fermato; debito di sonno se preceduto da notti corte; altrimenti stress/malessere generico.',
     read: 'Confidenza più alta con più segnali concordi e più giorni. Rientro = giorni per tornare in baseline dopo la fine.',
   },
   illnessPatterns: {

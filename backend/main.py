@@ -175,6 +175,14 @@ def load_day(d: date) -> dict:
             h = soft_call(lambda g: g.get_hrv_data(ds)) or {}
             hrv = _dig(h, "hrvSummary", "lastNightAvg")
             hrv_status = hrv_status or _dig(h, "hrvSummary", "status")
+        # overnight breathing rate and blood oxygen: early markers of illness (SpO2 only if Pulse Ox is enabled)
+        spo2_sum = sleep.get("wellnessSpO2SleepSummaryDTO") or {}
+        spo2 = dto.get("averageSpO2Value") or dto.get("avgSpO2") or spo2_sum.get("averageSPO2")
+        spo2_low = dto.get("lowestSpO2Value") or spo2_sum.get("lowestSPO2")
+        if spo2 is None and dto.get("sleepTimeSeconds"):
+            sp = soft_call(lambda g: g.get_spo2_data(ds)) or {}
+            spo2 = sp.get("avgSleepSpO2") or sp.get("averageSpO2")
+            spo2_low = spo2_low or sp.get("lowestSpO2")
         return {
             "date": ds,
             "hrv": hrv,
@@ -185,6 +193,10 @@ def load_day(d: date) -> dict:
             "bbMin": stats.get("bodyBatteryLowestValue"),
             "bbCharged": stats.get("bodyBatteryChargedValue"),
             "bbDrained": stats.get("bodyBatteryDrainedValue"),
+            "respiration": dto.get("averageRespirationValue"),
+            "respirationLow": dto.get("lowestRespirationValue"),
+            "spo2": spo2,
+            "spo2Low": spo2_low,
             "steps": stats.get("totalSteps"),
             "activeKcal": stats.get("activeKilocalories"),
             # WHO-style activity minutes: moderate + vigorous (vigorous counts double in Garmin's weekly goal)

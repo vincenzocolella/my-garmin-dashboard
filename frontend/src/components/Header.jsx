@@ -42,13 +42,13 @@ function StatusPill({ status, dataset, dataSource }) {
 
 export function Header({ tab, setTab, range, setRange, status, dataset, dataSource, onSync, syncing, onSettings, onChat, aiAvailable }) {
   return (
-    <header className="sticky top-0 z-30 border-b border-edge bg-void/85 backdrop-blur-md">
-      <div className="mx-auto flex max-w-[1600px] flex-wrap items-center gap-x-6 gap-y-3 px-4 py-3 md:px-6">
+    <header className="sticky top-0 z-30 border-b border-edge bg-void/85 backdrop-blur-md" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+      <div className="mx-auto flex max-w-[1600px] flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2 sm:gap-x-6 sm:gap-y-3 sm:px-4 sm:py-3 md:px-6">
         <div className="flex items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-md border border-cyan/40 bg-cyan/10">
             <Zap size={16} className="text-cyan" />
           </div>
-          <div className="num text-sm font-bold uppercase tracking-[0.2em] text-cyan">Garmin Dashboard</div>
+          <div className="num hidden text-sm font-bold uppercase tracking-[0.2em] text-cyan sm:block">Garmin Dashboard</div>
         </div>
 
         <nav className="flex gap-1 rounded-lg border border-edge bg-panel/60 p-1">
@@ -75,7 +75,7 @@ export function Header({ tab, setTab, range, setRange, status, dataset, dataSour
           <button type="button" onClick={onSync} disabled={syncing}
             className="flex items-center gap-1.5 rounded-md bg-cyan px-3 py-1.5 text-xs font-semibold text-void transition hover:bg-cyan/85 disabled:opacity-60">
             {syncing ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
-            Sync & Judge Now
+            <span className="hidden sm:inline">Sync & Judge Now</span><span className="sm:hidden">Sync</span>
           </button>
           <button type="button" onClick={onChat} title="Chiedi ai tuoi dati"
             className="flex items-center gap-1.5 rounded-md border border-edge px-2.5 py-1.5 text-xs text-gray-300 hover:border-cyan/50 hover:text-cyan">

@@ -3,7 +3,7 @@ import { C, TimeChart } from '../components/charts/Charts';
 import { AIBox, Card, Kpi, Legend, TONE } from '../components/ui';
 import { EPISODE_TYPES, SENSITIVITY } from '../lib/illness';
 import { illnessText } from '../lib/insights';
-import { fmt, fmtDay, fmtH, signed } from '../lib/util';
+import { fmt, fmtDay, fmtH, isNum, signed } from '../lib/util';
 
 const TONE_HEX = { bad: C.crimson, warn: C.amber, info: C.cyan, good: C.emerald };
 
@@ -11,6 +11,8 @@ function NowCard({ a, sensitivity, onSensitivity, history }) {
   const il = a.illness;
   const t = il.current.today;
   const active = il.current.active;
+  const today = a.rowsAll.at(-1);
+  const spo2On = a.rowsAll.slice(-30).some((r) => isNum(r.spo2));
   // index above threshold without the concordant RHR↑ + HRV↓ pattern: worth watching, not an alarm
   const watch = !active && (t?.index ?? 0) >= 50;
   const st = active ? { cls: 'border-crimson/50 bg-crimson/10', txt: 'text-crimson', label: 'Segnali attivi' }
@@ -30,6 +32,10 @@ function NowCard({ a, sensitivity, onSensitivity, history }) {
         ))}
       </div>
       <div className="grid grid-cols-2 gap-4">
+        <Kpi label="Respirazione notte" value={fmt(today?.respiration, 1)} unit="atti/min" tone={(t?.signals ?? []).includes('respirazione ↑') ? 'bad' : undefined}
+          sub={t?.respDelta != null ? `${signed(t.respDelta, 1)} vs norma` : isNum(today?.respiration) ? 'norma in costruzione' : 'non disponibile'} />
+        <Kpi label="SpO2 notte" value={fmt(today?.spo2)} unit="%" tone={(t?.signals ?? []).includes('SpO2 ↓') ? 'bad' : undefined}
+          sub={spo2On ? (t?.spo2Delta != null ? `${signed(t.spo2Delta, 1)} vs norma` : 'norma in costruzione') : 'Pulse Ox spento: attivalo “durante il sonno”'} />
         <Kpi label="Giorni nella norma" value={il.stats.healthyStreak} />
         <Kpi label="Ultimo episodio" value={il.stats.lastEpisodeAgo != null ? `${il.stats.lastEpisodeAgo} gg fa` : '—'} />
       </div>
@@ -66,7 +72,7 @@ function TimelineCard({ a }) {
         tooltipExtra={(r) => (
           <div className="mt-1 text-[10px] text-gray-400">
             {r.signals?.length ? <div>{r.signals.join(' · ')}</div> : null}
-            {(r.rhrDelta != null || r.hrvPct != null) && <div className="num">FC riposo {signed(r.rhrDelta, 1)} bpm · HRV {signed(r.hrvPct)}%</div>}
+            {(r.rhrDelta != null || r.hrvPct != null) && <div className="num">FC riposo {signed(r.rhrDelta, 1)} bpm · HRV {signed(r.hrvPct)}%{r.respDelta != null && ` · respirazione ${signed(r.respDelta, 1)}`}{r.spo2Delta != null && ` · SpO2 ${signed(r.spo2Delta, 1)}%`}</div>}
           </div>
         )} />
       <Legend items={[{ label: 'Giorno anomalo', color: C.crimson }, { label: 'Vicino alla soglia', color: C.amber }, { label: 'Nella norma', color: '#334155' }]} />
@@ -97,7 +103,7 @@ function EpisodesCard({ a }) {
               <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] sm:grid-cols-4">
                 <span className="text-gray-500">FC riposo <b className="num text-gray-200">{signed(e.markers.rhr, 1)} bpm</b></span>
                 <span className="text-gray-500">HRV <b className="num text-gray-200">{signed(e.markers.hrv)}%</b></span>
-                <span className="text-gray-500">Stress <b className="num text-gray-200">{signed(e.markers.stress)}</b></span>
+                <span className="text-gray-500">{e.markers.resp != null ? <>Respirazione <b className="num text-gray-200">{signed(e.markers.resp, 1)} atti/min</b></> : <>Stress <b className="num text-gray-200">{signed(e.markers.stress)}</b></>}</span>
                 <span className="text-gray-500">Rientro <b className="num text-gray-200">{e.recoveryDays != null ? `${e.recoveryDays} gg` : e.ongoing ? '—' : '> 14 gg'}</b></span>
               </div>
               <div className="mt-2 flex flex-wrap gap-1">

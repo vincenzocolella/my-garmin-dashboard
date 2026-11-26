@@ -275,6 +275,10 @@ export function generateDemo(scenario = 'balanced', totalDays = 200) {
       bbMin,
       bbCharged: Math.max(0, bbMax - (days.at(-1)?.bbMin ?? bbMin)),
       bbDrained: bbMax - bbMin,
+      respiration: Math.round((14.2 + ot * 0.4 + sleepy * 0.3 + 1.8 * sick + r.normal(0, 0.3)) * 10) / 10,
+      respirationLow: Math.round((11.8 + 1.2 * sick + r.normal(0, 0.4)) * 10) / 10,
+      spo2: Math.round(clamp(95.5 - 1.6 * sick + r.normal(0, 0.6), 88, 99)),
+      spo2Low: Math.round(clamp(91 - 3 * sick + r.normal(0, 1.2), 80, 97)),
       steps: Math.round(6500 + r() * 3500 + activities.filter((a) => a.date === date && a.kind === 'run').reduce((s, a) => s + a.distance * 1.3, 0)),
       activeKcal: Math.round(450 + load * 4),
       sleep: {
